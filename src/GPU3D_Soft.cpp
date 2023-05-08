@@ -1041,7 +1041,30 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     else
     for (; x < xlimit; x++)
     {
-        u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
+        u32 pixeladdr;
+        //check if all vertices are the same x coordinate
+        bool onewide = true;
+        for (int i = 0; i < (polygon->NumVertices - 1);)
+        {
+            if (polygon->Vertices[i]->FinalPosition[0] == polygon->Vertices[i+1]->FinalPosition[0])
+            {
+                i++;
+                continue;
+            }
+            else
+            {
+                pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
+                onewide = false;
+                break;
+            }
+        }
+
+        if (onewide) 
+        {
+            //pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x + 1;
+            continue;
+        }
+
         u32 dstattr = AttrBuffer[pixeladdr];
 
         // check stencil buffer for shadows
