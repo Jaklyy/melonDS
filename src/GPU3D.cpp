@@ -558,6 +558,7 @@ void DoSavestate(Savestate* file)
 
         file->Bool32(&poly->FacingView);
         file->Bool32(&poly->Translucent);
+        file->Bool32(&poly->OneWide);
 
         file->Bool32(&poly->IsShadowMask);
         file->Bool32(&poly->IsShadow);
@@ -1416,6 +1417,22 @@ void SubmitPolygon()
 
         poly->FinalZ[i] = z;
         poly->FinalW[i] = w;
+    }
+
+    //check if all vertices are the same x coordinate
+    poly->OneWide = true;
+    for (int i = 0; i < (poly->NumVertices - 1);)
+    {
+        if (poly->Vertices[i]->FinalPosition[0] == poly->Vertices[i+1]->FinalPosition[0])
+        {
+            i++; 
+            continue;
+        }
+        else
+        {
+            poly->OneWide = false;
+            break;
+        }
     }
 
     if (PolygonMode >= 2)
