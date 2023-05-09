@@ -1026,6 +1026,22 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
 
     s32 xcov = 0;
 
+    //check if all vertices are the same x coordinate
+    bool onewide = true;
+    for (int i = 0; i < (polygon->NumVertices - 1);)
+    {
+        if (polygon->Vertices[i]->FinalPosition[0] == polygon->Vertices[i+1]->FinalPosition[0])
+        {
+            i++;
+            continue;
+        }
+        else
+        {
+            onewide = false;
+            break;
+        }
+    }
+
     // part 1: left edge
     edge = yedge | 0x1;
     xlimit = xstart+l_edgelen;
@@ -1042,27 +1058,14 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     for (; x < xlimit; x++)
     {
         u32 pixeladdr;
-        //check if all vertices are the same x coordinate
-        bool onewide = true;
-        for (int i = 0; i < (polygon->NumVertices - 1);)
-        {
-            if (polygon->Vertices[i]->FinalPosition[0] == polygon->Vertices[i+1]->FinalPosition[0])
-            {
-                i++;
-                continue;
-            }
-            else
-            {
-                pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
-                onewide = false;
-                break;
-            }
-        }
 
         if (onewide) 
         {
-            //pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x + 1;
-            continue;
+            pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x + 1;
+        }
+        else 
+        {
+            pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
         }
 
         u32 dstattr = AttrBuffer[pixeladdr];
@@ -1262,7 +1265,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
 
             pixeladdr += BufferSize;
             dstattr = AttrBuffer[pixeladdr];
-            if (!fnDepthTest(DepthBuffer[pixeladdr], z, dstattr))
+            if ((!fnDepthTest(DepthBuffer[pixeladdr], z, dstattr) || onewide))
                 continue;
         }
 
@@ -1298,7 +1301,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
                 attr |= (cov << 8);
 
                 // push old pixel down if needed
-                if (pixeladdr < BufferSize)
+                if ((pixeladdr < BufferSize) && !onewide)
                 {
                     ColorBuffer[pixeladdr+BufferSize] = ColorBuffer[pixeladdr];
                     DepthBuffer[pixeladdr+BufferSize] = DepthBuffer[pixeladdr];
