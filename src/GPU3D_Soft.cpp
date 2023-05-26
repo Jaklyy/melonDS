@@ -1019,7 +1019,8 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     int edge;
 
     s32 x = xstart;
-    Interpolator<0> interpX(xstart, xend+1, wl, wr);
+    s32 offset = polygon->OneWide ? -1 : 1;
+    Interpolator<0> interpX(xstart, xend+offset, wl, wr);
 
     if (x < 0) x = 0;
     s32 xlimit;

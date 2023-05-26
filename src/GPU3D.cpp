@@ -1419,7 +1419,8 @@ void SubmitPolygon()
         poly->FinalW[i] = w;
     }
 
-    //check if all vertices are the same x coordinate
+    // check if all vertices are the same x coordinate
+    // stupid question: can there even be more than 3 vertices on a single polygon? is this way overcomplicating things?
     poly->OneWide = true;
     for (int i = 0; i < (poly->NumVertices - 1);)
     {
