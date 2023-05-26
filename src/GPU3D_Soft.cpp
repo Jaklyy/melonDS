@@ -791,7 +791,8 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
     int edge;
 
     s32 x = xstart;
-    Interpolator<0> interpX(xstart, xend+1, wl, wr);
+    s32 offset = polygon->OneWide ? -1 : 1;
+    Interpolator<0> interpX(xstart, xend+offset, wl, wr);
 
     if (x < 0) x = 0;
     s32 xlimit;
@@ -807,7 +808,7 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
 
     for (; x < xlimit; x++)
     {
-        u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
+        u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x + polygon->OneWide;
 
         interpX.SetX(x);
 
@@ -1042,16 +1043,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     else
     for (; x < xlimit; x++)
     {
-        u32 pixeladdr;
-
-        if (polygon->OneWide) 
-        {
-            pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x + 1;
-        }
-        else 
-        {
-            pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
-        }
+        u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x + polygon->OneWide;
 
         u32 dstattr = AttrBuffer[pixeladdr];
 
