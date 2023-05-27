@@ -791,8 +791,7 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
     int edge;
 
     s32 x = xstart;
-    s32 offset = polygon->OneWide ? -1 : 1;
-    Interpolator<0> interpX(xstart, xend+offset, wl, wr);
+    Interpolator<0> interpX(xstart+polygon->OneWide, xend, wl, wr);
 
     if (x < 0) x = 0;
     s32 xlimit;
@@ -808,7 +807,7 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
 
     for (; x < xlimit; x++)
     {
-        u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x + polygon->OneWide;
+        u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
 
         interpX.SetX(x);
 
@@ -816,7 +815,7 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
         u32 dstattr = AttrBuffer[pixeladdr];
 
         // checkme
-        if (!l_filledge)
+        if (!l_filledge || polygon->OneWide)
             continue;
 
         if (!fnDepthTest(DepthBuffer[pixeladdr], z, dstattr))
@@ -871,7 +870,7 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
         u32 dstattr = AttrBuffer[pixeladdr];
 
         // checkme
-        if (!r_filledge || polygon->OneWide)
+        if (!r_filledge)
             continue;
 
         if (!fnDepthTest(DepthBuffer[pixeladdr], z, dstattr))
@@ -1020,8 +1019,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     int edge;
 
     s32 x = xstart;
-    s32 offset = polygon->OneWide ? -1 : 1;
-    Interpolator<0> interpX(xstart, xend+offset, wl, wr);
+    Interpolator<0> interpX(xstart+polygon->OneWide, xend+1, wl, wr);
 
     if (x < 0) x = 0;
     s32 xlimit;
@@ -1039,11 +1037,11 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         if (xcov == 0x3FF) xcov = 0;
     }
 
-    if (!l_filledge) x = std::min(xlimit, xend-r_edgelen+1);
+    if (!l_filledge || polygon->OneWide) x = std::min(xlimit, xend-r_edgelen+1);
     else
     for (; x < xlimit; x++)
     {
-        u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x + polygon->OneWide;
+        u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
 
         u32 dstattr = AttrBuffer[pixeladdr];
 
@@ -1212,7 +1210,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         if (xcov == 0x3FF) xcov = 0;
     }
 
-    if (r_filledge && !polygon->OneWide)
+    if (r_filledge)
     for (; x < xlimit; x++)
     {
         u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
