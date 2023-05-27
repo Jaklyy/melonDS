@@ -871,7 +871,7 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
         u32 dstattr = AttrBuffer[pixeladdr];
 
         // checkme
-        if (!r_filledge)
+        if (!r_filledge || polygon->OneWide)
             continue;
 
         if (!fnDepthTest(DepthBuffer[pixeladdr], z, dstattr))
@@ -1212,7 +1212,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         if (xcov == 0x3FF) xcov = 0;
     }
 
-    if (r_filledge)
+    if (r_filledge && !polygon->OneWide)
     for (; x < xlimit; x++)
     {
         u32 pixeladdr = FirstPixelOffset + (y*ScanlineWidth) + x;
@@ -1242,7 +1242,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
 
             pixeladdr += BufferSize;
             dstattr = AttrBuffer[pixeladdr];
-            if ((!fnDepthTest(DepthBuffer[pixeladdr], z, dstattr) || polygon->OneWide))
+            if (!fnDepthTest(DepthBuffer[pixeladdr], z, dstattr))
                 continue;
         }
 
@@ -1278,7 +1278,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
                 attr |= (cov << 8);
 
                 // push old pixel down if needed
-                if ((pixeladdr < BufferSize) && !polygon->OneWide)
+                if (pixeladdr < BufferSize)
                 {
                     ColorBuffer[pixeladdr+BufferSize] = ColorBuffer[pixeladdr];
                     DepthBuffer[pixeladdr+BufferSize] = DepthBuffer[pixeladdr];
