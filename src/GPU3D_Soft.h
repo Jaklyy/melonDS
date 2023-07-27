@@ -291,7 +291,6 @@ private:
             // slope increment has a 18-bit fractional part
             // note: for some reason, x/y isn't calculated directly,
             // instead, 1/y is calculated and then multiplied by x
-            // TODO: this is still not perfect (see for example x=169 y=33)
             if (ylen == 0)
                 Increment = 0;
             else if (ylen == xlen)
@@ -324,6 +323,14 @@ private:
 
             dx += (y - y0) * Increment;
 
+            if (XMajor && side ^ Negative)
+            {
+                dxold = dx;
+                // I dont think the first span can have a gap but i think its technically correct to do this calc anyway?
+                // could probably be removed as a minor optimization
+                dx &= ~0x1FF;
+            }
+
             s32 x = XVal();
 
             if (XMajor)
@@ -345,8 +352,17 @@ private:
         }
 
         s32 Step()
-        {
-            dx += Increment;
+        {   
+            if (XMajor && (side ^ Negative)) // tl, br (right side start) & tr, bl (left side start)
+            {
+                // round dx; required to create gaps in lines like on hw
+                // increment using dxold to make the line not completely borked after rendering a gap
+                dx = (dxold & ~0x1FF) + Increment;
+                dxold += Increment;
+            }
+            else
+                dx += Increment;
+
             y++;
 
             s32 x = XVal();
@@ -374,14 +390,17 @@ private:
 
         void EdgeParams_XMajor(s32* length, s32* coverage)
         {
-            if (side ^ Negative)
-                *length = (dx >> 18) - ((dx-Increment) >> 18);
-            else
-                *length = ((dx+Increment) >> 18) - (dx >> 18);
+            if (side ^ Negative) // tr, bl (left side end) & tl br (right side end)
+                // dxold used here to avoid rounding the endpoint
+                *length = (dx >> 18) - (dxold - Increment >> 18);
+            else // tl, br (left side end) & tr, bl (right side end)
+                // dx rounded down to create gaps in lines like on hw
+                *length = ((dx & ~0x1FF) + Increment >> 18) - (dx >> 18);
 
             // for X-major edges, we return the coverage
             // for the first pixel, and the increment for
             // further pixels on the same scanline
+            // TODO: check how coverage interacts with line gaps
             s32 startx = dx >> 18;
             if (Negative) startx = xlen - startx;
             if (side)     startx = startx - *length + 1;
@@ -425,7 +444,7 @@ private:
     private:
         s32 x0, xmin, xmax;
         s32 xlen, ylen;
-        s32 dx;
+        s32 dx, dxold;
         s32 y;
 
         s32 xcov_incr;
