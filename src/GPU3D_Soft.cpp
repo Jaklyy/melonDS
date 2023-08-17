@@ -742,6 +742,11 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
     s32 zl = rp->SlopeL.Interp.InterpolateZ(polygon->FinalZ[rp->CurVL], polygon->FinalZ[rp->NextVL], polygon->WBuffer);
     s32 zr = rp->SlopeR.Interp.InterpolateZ(polygon->FinalZ[rp->CurVR], polygon->FinalZ[rp->NextVR], polygon->WBuffer);
 
+    // right vertical edges are pushed 1px to the left as long as either:
+    // the left edge slope is not 0, or the span is not 0 pixels wide
+    if (rp->SlopeR.Increment==0 && (rp->SlopeL.Increment!=0 || xstart != xend))
+        xend--;
+
     // if the left and right edges are swapped, render backwards.
     if (xstart > xend)
     {
@@ -1025,9 +1030,6 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
 
     s32 x = xstart;
     Interpolator<0> interpX(xstart, xend+(!vertical), wl, wr);
-    // shift xend left if vertical, unless it would end up before the left end
-    if (vertical && !(xend <= xstart))
-        xend--;
 
     if (x < 0) x = 0;
     s32 xlimit;
