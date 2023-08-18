@@ -719,6 +719,7 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
     s32 l_edgecov, r_edgecov;
     Interpolator<1>* interp_start;
     Interpolator<1>* interp_end;
+    bool zerowide = false;
 
     xstart = rp->XL;
     xend = rp->XR;
@@ -744,8 +745,11 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
 
     // right vertical edges are pushed 1px to the left as long as either:
     // the left edge slope is not 0, or the span is not 0 pixels wide
-    if (rp->SlopeR.Increment==0 && (rp->SlopeL.Increment!=0 || xstart != xend))
-        xend--;
+    if (rp->SlopeR.Increment==0)
+        if (rp->SlopeL.Increment!=0 || xstart != xend)
+            xend--;
+        else
+            zerowide = true;
 
     // if the left and right edges are swapped, render backwards.
     if (xstart > xend)
@@ -765,6 +769,29 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
         std::swap(wl, wr);
         std::swap(zl, zr);
         std::swap(l_filledge, r_filledge);
+    }
+    // CHECKME: is there not a better way to get the correct result?
+    else if (zerowide)
+    {
+        vlcur = polygon->Vertices[rp->CurVR];
+        vlnext = polygon->Vertices[rp->NextVR];
+        vrcur = polygon->Vertices[rp->CurVL];
+        vrnext = polygon->Vertices[rp->NextVL];
+
+        interp_start = &rp->SlopeR.Interp;
+        interp_end = &rp->SlopeL.Interp;
+
+        l_edgelen = 1;
+        r_edgelen = 1;
+
+        l_edgecov = 31;
+        r_edgecov = 31;
+
+        l_filledge = true;
+        r_filledge = true;
+
+        std::swap(wl, wr);
+        std::swap(zl, zr);
     }
     else
     {
@@ -933,6 +960,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     s32 l_edgecov, r_edgecov;
     Interpolator<1>* interp_start;
     Interpolator<1>* interp_end;
+    bool zerowide = false;
 
     xstart = rp->XL;
     xend = rp->XR;
@@ -963,8 +991,11 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     
     // right vertical edges are pushed 1px to the left as long as either:
     // the left edge slope is not 0, or the span is not 0 pixels wide
-    if (rp->SlopeR.Increment==0 && (rp->SlopeL.Increment!=0 || xstart != xend))
-        xend--;
+    if (rp->SlopeR.Increment==0)
+        if (rp->SlopeL.Increment!=0 || xstart != xend)
+            xend--;
+        else
+            zerowide = true;
 
     // if the left and right edges are swapped, render backwards.
     // on hardware, swapped edges seem to break edge length calculation,
@@ -990,6 +1021,29 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         std::swap(wl, wr);
         std::swap(zl, zr);
         std::swap(l_filledge, r_filledge);
+    }
+    // CHECKME: is there not a better way to get the correct result?
+    else if (zerowide)
+    {
+        vlcur = polygon->Vertices[rp->CurVR];
+        vlnext = polygon->Vertices[rp->NextVR];
+        vrcur = polygon->Vertices[rp->CurVL];
+        vrnext = polygon->Vertices[rp->NextVL];
+
+        interp_start = &rp->SlopeR.Interp;
+        interp_end = &rp->SlopeL.Interp;
+
+        l_edgelen = 1;
+        r_edgelen = 1;
+
+        l_edgecov = 31;
+        r_edgecov = 31;
+
+        l_filledge = true;
+        r_filledge = true;
+
+        std::swap(wl, wr);
+        std::swap(zl, zr);
     }
     else
     {
