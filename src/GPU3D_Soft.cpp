@@ -933,7 +933,6 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     s32 l_edgecov, r_edgecov;
     Interpolator<1>* interp_start;
     Interpolator<1>* interp_end;
-    bool vertical;
 
     xstart = rp->XL;
     xend = rp->XR;
@@ -961,6 +960,11 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
 
     s32 zl = rp->SlopeL.Interp.InterpolateZ(polygon->FinalZ[rp->CurVL], polygon->FinalZ[rp->NextVL], polygon->WBuffer);
     s32 zr = rp->SlopeR.Interp.InterpolateZ(polygon->FinalZ[rp->CurVR], polygon->FinalZ[rp->NextVR], polygon->WBuffer);
+    
+    // right vertical edges are pushed 1px to the left as long as either:
+    // the left edge slope is not 0, or the span is not 0 pixels wide
+    if (rp->SlopeR.Increment==0 && (rp->SlopeL.Increment!=0 || xstart != xend))
+        xend--;
 
     // if the left and right edges are swapped, render backwards.
     // on hardware, swapped edges seem to break edge length calculation,
@@ -982,8 +986,6 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         rp->SlopeR.EdgeParams_YMajor(&l_edgelen, &l_edgecov);
         rp->SlopeL.EdgeParams_YMajor(&r_edgelen, &r_edgecov);
 
-        vertical = (rp->SlopeL.Increment==0);
-
         std::swap(xstart, xend);
         std::swap(wl, wr);
         std::swap(zl, zr);
@@ -1001,8 +1003,6 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
 
         rp->SlopeL.EdgeParams(&l_edgelen, &l_edgecov);
         rp->SlopeR.EdgeParams(&r_edgelen, &r_edgecov);
-        
-        vertical = (rp->SlopeR.Increment==0);
     }
 
     // interpolate attributes along Y
@@ -1029,7 +1029,7 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     int edge;
 
     s32 x = xstart;
-    Interpolator<0> interpX(xstart, xend+(!vertical), wl, wr);
+    Interpolator<0> interpX(xstart, xend+1, wl, wr);
 
     if (x < 0) x = 0;
     s32 xlimit;
