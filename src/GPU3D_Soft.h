@@ -142,7 +142,7 @@ private:
 
         s32 Interpolate(s32 y0, s32 y1)
         {
-            if (xdiff == 0 || y0 == y1) return y1;
+            if (xdiff == 0 || y0 == y1) return y0;
 
             if (!linear)
             {
@@ -164,7 +164,7 @@ private:
 
         s32 InterpolateZ(s32 z0, s32 z1, bool wbuffer)
         {
-            if (xdiff == 0 || z0 == z1) return z1;
+            if (xdiff == 0 || z0 == z1) return z0;
 
             if (wbuffer)
             {
