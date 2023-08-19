@@ -1153,19 +1153,24 @@ void SubmitPolygon()
     // fix certain polygons being swapped/not swapped erroneously
 
     if (nverts == 4)
-        for (int a = 0; a < nverts-1 ; a++)
-            for (int b = a+1; b < nverts; b++)
-                if (clippedvertices[a].Position[0] == clippedvertices[b].Position[0] && clippedvertices[a].Position[1] == clippedvertices[b].Position[1])
-                {
-                    int c = 0;
-                    while (c == a || c == b) c++;
-                    int d = c+1;
-                    while (d == a || d == b) d++;
-                    std::swap(clippedvertices[c], clippedvertices[d]);
-                    std::swap(clippedvertices[a], clippedvertices[b]);
-                    goto letsleave;
-                }
-    letsleave:
+    {
+        // check if vertices are equal to the second vertex
+        for (int a = 0; a < nverts-1; a++)
+        {
+            if (a == 1) a++;
+            if (clippedvertices[a].Position[0] == clippedvertices[1].Position[0] && clippedvertices[a].Position[1] == clippedvertices[1].Position[1])
+            {
+                // find remaining pair of vertices
+                int c = 0;
+                while (c == a || c == 1) c++;
+                int d = std::max(c+1, 2);
+                if (d == a) d++;
+                std::swap(clippedvertices[c], clippedvertices[d]);
+                std::swap(clippedvertices[a], clippedvertices[1]);
+                break;
+            }
+        }
+    }
 
     // clipping
 
