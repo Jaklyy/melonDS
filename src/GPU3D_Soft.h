@@ -152,11 +152,17 @@ private:
             }
             else
             {
-                // linear interpolation
                 if (y0 < y1)
+                    return (y1-y0) / xdiff;
+                else
+                    return (y0-y1) / xdiff;
+
+                // linear interpolation
+                /*if (y0 < y1)
                     return y0 + (s64)(y1-y0) * x / xdiff;
                 else
-                    return y1 + (s64)(y0-y1) * (xdiff - x) / xdiff;
+                    return y1 + (s64)(y0-y1) * (xdiff - x) / xdiff;*/
+
             }
         }
 
@@ -191,7 +197,8 @@ private:
                     factor = xdiff - x;
                 }
 
-                if (dir)
+                return disp / xdiff;
+                /*if (dir)
                 {
                     int shift = 0;
                     while (disp > 0x3FF)
@@ -206,15 +213,16 @@ private:
                 {
                     disp >>= 9;
                     return base + (((s64)disp * factor * xrecip_z) >> 13);
-                }
+                }*/
             }
         }
+        
+        bool linear;
 
     private:
         s32 x0, x1, xdiff, x;
 
         int shift;
-        bool linear;
 
         s32 xrecip_z;
         s32 w0n, w0d, w1d;
@@ -315,7 +323,8 @@ private:
 
             int interpoffset = (Increment >= 0x40000) && (side ^ Negative);
             Interp.Setup(y0-interpoffset, y1-interpoffset, w0, w1);
-            Interp.SetX(y);
+            if (!Interp.linear)
+                Interp.SetX(y);
 
             // used for calculating AA coverage
             if (XMajor) xcov_incr = (ylen << 10) / xlen;
@@ -329,7 +338,8 @@ private:
             y++;
 
             s32 x = XVal();
-            Interp.SetX(y);
+            if (!Interp.linear)
+                Interp.SetX(y);
             return x;
         }
 
@@ -447,6 +457,15 @@ private:
         u32 CurVL, CurVR;
         u32 NextVL, NextVR;
 
+        s32 wl, wli, wr, wri;
+        s32 zl, zli, zr, zri;
+        
+        s32 rl, rli, rr, rri;
+        s32 gl, gli, gr, gri;
+        s32 bl, bli, br, bri;
+
+        s32 sl, sli, sr, sri;
+        s32 tl, tli, tr, tri;
     };
 
     RendererPolygon PolygonList[2048];
@@ -480,6 +499,8 @@ private:
     u32 ColorBuffer[BufferSize * 2];
     u32 DepthBuffer[BufferSize * 2];
     u32 AttrBuffer[BufferSize * 2];
+    bool NewLSlope;
+    bool NewRSlope;
 
     // attribute buffer:
     // bit0-3: edge flags (left/right/top/bottom)

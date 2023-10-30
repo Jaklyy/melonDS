@@ -589,6 +589,8 @@ void SoftRenderer::SetupPolygonLeftEdge(SoftRenderer::RendererPolygon* rp, s32 y
     rp->XL = rp->SlopeL.Setup(polygon->Vertices[rp->CurVL]->FinalPosition[0], polygon->Vertices[rp->NextVL]->FinalPosition[0],
                               polygon->Vertices[rp->CurVL]->FinalPosition[1], polygon->Vertices[rp->NextVL]->FinalPosition[1],
                               polygon->FinalW[rp->CurVL], polygon->FinalW[rp->NextVL], y);
+
+    NewLSlope = true;
 }
 
 void SoftRenderer::SetupPolygonRightEdge(SoftRenderer::RendererPolygon* rp, s32 y)
@@ -616,6 +618,8 @@ void SoftRenderer::SetupPolygonRightEdge(SoftRenderer::RendererPolygon* rp, s32 
     rp->XR = rp->SlopeR.Setup(polygon->Vertices[rp->CurVR]->FinalPosition[0], polygon->Vertices[rp->NextVR]->FinalPosition[0],
                               polygon->Vertices[rp->CurVR]->FinalPosition[1], polygon->Vertices[rp->NextVR]->FinalPosition[1],
                               polygon->FinalW[rp->CurVR], polygon->FinalW[rp->NextVR], y);
+
+    NewRSlope = true;
 }
 
 void SoftRenderer::SetupPolygon(SoftRenderer::RendererPolygon* rp, Polygon* polygon)
@@ -673,7 +677,7 @@ void SoftRenderer::SetupPolygon(SoftRenderer::RendererPolygon* rp, Polygon* poly
 
 void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
 {
-    Polygon* polygon = rp->PolyData;
+    /*Polygon* polygon = rp->PolyData;
 
     u32 polyattr = (polygon->Attr & 0x3F008000);
     if (!polygon->FacingView) polyattr |= (1<<4);
@@ -896,7 +900,7 @@ void SoftRenderer::RenderShadowMaskScanline(RendererPolygon* rp, s32 y)
     }
 
     rp->XL = rp->SlopeL.Step();
-    rp->XR = rp->SlopeR.Step();
+    rp->XR = rp->SlopeR.Step();*/
 }
 
 void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
@@ -942,13 +946,44 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
 
     xstart = rp->XL;
     xend = rp->XR;
+    if (!rp->SlopeL.Interp.linear)
+    {
+        rp->wl = rp->SlopeL.Interp.Interpolate(polygon->FinalW[rp->CurVL], polygon->FinalW[rp->NextVL]);
+        rp->zl = rp->SlopeL.Interp.InterpolateZ(polygon->FinalZ[rp->CurVL], polygon->FinalZ[rp->NextVL], polygon->WBuffer);
+    }
+    else if (NewLSlope)
+    {
+        rp->wli = rp->SlopeL.Interp.Interpolate(polygon->FinalW[rp->CurVL], polygon->FinalW[rp->NextVL]);
+        rp->zli = rp->SlopeL.Interp.InterpolateZ(polygon->FinalZ[rp->CurVL], polygon->FinalZ[rp->NextVL], polygon->WBuffer);
 
-    s32 wl = rp->SlopeL.Interp.Interpolate(polygon->FinalW[rp->CurVL], polygon->FinalW[rp->NextVL]);
-    s32 wr = rp->SlopeR.Interp.Interpolate(polygon->FinalW[rp->CurVR], polygon->FinalW[rp->NextVR]);
+        rp->wl = polygon->FinalW[rp->CurVL];
+        rp->zl = polygon->FinalZ[rp->CurVL];
+    }
+    else
+    {
+        rp->wl += rp->wli;
+        rp->zl += rp->zli;
+    }
 
-    s32 zl = rp->SlopeL.Interp.InterpolateZ(polygon->FinalZ[rp->CurVL], polygon->FinalZ[rp->NextVL], polygon->WBuffer);
-    s32 zr = rp->SlopeR.Interp.InterpolateZ(polygon->FinalZ[rp->CurVR], polygon->FinalZ[rp->NextVR], polygon->WBuffer);
-    
+    if (!rp->SlopeR.Interp.linear)
+    {
+        rp->wr = rp->SlopeR.Interp.Interpolate(polygon->FinalW[rp->CurVR], polygon->FinalW[rp->NextVR]);
+        rp->zr = rp->SlopeR.Interp.InterpolateZ(polygon->FinalZ[rp->CurVR], polygon->FinalZ[rp->NextVR], polygon->WBuffer);
+    }
+    else if (NewRSlope)
+    {
+        rp->wri = rp->SlopeL.Interp.Interpolate(polygon->FinalW[rp->CurVR], polygon->FinalW[rp->NextVR]);
+        rp->zri = rp->SlopeL.Interp.InterpolateZ(polygon->FinalZ[rp->CurVR], polygon->FinalZ[rp->NextVR], polygon->WBuffer);
+
+        rp->wr = polygon->FinalW[rp->CurVR];
+        rp->zr = polygon->FinalZ[rp->CurVR];
+    }
+    else
+    {
+        rp->wr += rp->wri;
+        rp->zr += rp->zri;
+    }
+
     // right vertical edges are pushed 1px to the left as long as either:
     // the left edge slope is not 0, or the span is not 0 pixels wide, and it is not at the leftmost pixel of the screen
     if (rp->SlopeR.Increment==0 && (rp->SlopeL.Increment!=0 || xstart != xend) && (xend != 0))
@@ -973,8 +1008,10 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         rp->SlopeL.EdgeParams<true>(&r_edgelen, &r_edgecov);
 
         std::swap(xstart, xend);
-        std::swap(wl, wr);
-        std::swap(zl, zr);
+        std::swap(rp->wl, rp->wr);
+        std::swap(rp->zl, rp->zr);
+        std::swap(rp->wli, rp->wri);
+        std::swap(rp->zli, rp->zri);
 
         // edge fill rules for swapped opaque edges:
         // * right edge is filled if slope > 1, or if the left edge = 0, but is never filled if it is < -1
@@ -1032,21 +1069,99 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     }
 
     // interpolate attributes along Y
+    
+    if (!rp->SlopeL.Interp.linear)
+    {
+        rp->rl = interp_start->Interpolate(vlcur->FinalColor[0], vlnext->FinalColor[0]);
+        rp->gl = interp_start->Interpolate(vlcur->FinalColor[1], vlnext->FinalColor[1]);
+        rp->bl = interp_start->Interpolate(vlcur->FinalColor[2], vlnext->FinalColor[2]);
 
-    s32 rl = interp_start->Interpolate(vlcur->FinalColor[0], vlnext->FinalColor[0]);
-    s32 gl = interp_start->Interpolate(vlcur->FinalColor[1], vlnext->FinalColor[1]);
-    s32 bl = interp_start->Interpolate(vlcur->FinalColor[2], vlnext->FinalColor[2]);
+        rp->sl = interp_start->Interpolate(vlcur->TexCoords[0], vlnext->TexCoords[0]);
+        rp->tl = interp_start->Interpolate(vlcur->TexCoords[1], vlnext->TexCoords[1]);
+    }
+    else if (NewLSlope)
+    {
+        rp->rli = interp_start->Interpolate(vlcur->FinalColor[0], vlnext->FinalColor[0]);
+        rp->gli = interp_start->Interpolate(vlcur->FinalColor[1], vlnext->FinalColor[1]);
+        rp->bli = interp_start->Interpolate(vlcur->FinalColor[2], vlnext->FinalColor[2]);
 
-    s32 sl = interp_start->Interpolate(vlcur->TexCoords[0], vlnext->TexCoords[0]);
-    s32 tl = interp_start->Interpolate(vlcur->TexCoords[1], vlnext->TexCoords[1]);
+        rp->sli = interp_start->Interpolate(vlcur->TexCoords[0], vlnext->TexCoords[0]);
+        rp->tli = interp_start->Interpolate(vlcur->TexCoords[1], vlnext->TexCoords[1]);
+        
+        rp->rl = vlcur->FinalColor[0];
+        rp->gl = vlcur->FinalColor[1];
+        rp->bl = vlcur->FinalColor[2];
 
-    s32 rr = interp_end->Interpolate(vrcur->FinalColor[0], vrnext->FinalColor[0]);
-    s32 gr = interp_end->Interpolate(vrcur->FinalColor[1], vrnext->FinalColor[1]);
-    s32 br = interp_end->Interpolate(vrcur->FinalColor[2], vrnext->FinalColor[2]);
+        rp->sl = vlcur->TexCoords[0];
+        rp->tl = vlcur->TexCoords[1];
+        NewLSlope = false;
+    }
+    else
+    {
+        rp->rl += rp->rli;
+        rp->gl += rp->gli;
+        rp->bl += rp->bli;
 
-    s32 sr = interp_end->Interpolate(vrcur->TexCoords[0], vrnext->TexCoords[0]);
-    s32 tr = interp_end->Interpolate(vrcur->TexCoords[1], vrnext->TexCoords[1]);
+        rp->sl += rp->sli;
+        rp->tl += rp->tli;
+    }
 
+    if (!rp->SlopeR.Interp.linear)
+    {
+        rp->rr = interp_end->Interpolate(vrcur->FinalColor[0], vrnext->FinalColor[0]);
+        rp->gr = interp_end->Interpolate(vrcur->FinalColor[1], vrnext->FinalColor[1]);
+        rp->br = interp_end->Interpolate(vrcur->FinalColor[2], vrnext->FinalColor[2]);
+
+        rp->sr = interp_end->Interpolate(vrcur->TexCoords[0], vrnext->TexCoords[0]);
+        rp->tr = interp_end->Interpolate(vrcur->TexCoords[1], vrnext->TexCoords[1]);
+    }
+    else if (NewRSlope)
+    {
+        rp->rri = interp_end->Interpolate(vrcur->FinalColor[0], vrnext->FinalColor[0]);
+        rp->gri = interp_end->Interpolate(vrcur->FinalColor[1], vrnext->FinalColor[1]);
+        rp->bri = interp_end->Interpolate(vrcur->FinalColor[2], vrnext->FinalColor[2]);
+
+        rp->sri = interp_end->Interpolate(vrcur->TexCoords[0], vrnext->TexCoords[0]);
+        rp->tri = interp_end->Interpolate(vrcur->TexCoords[1], vrnext->TexCoords[1]);
+        
+        rp->rr = vrcur->FinalColor[0];
+        rp->gr = vrcur->FinalColor[1];
+        rp->br = vrcur->FinalColor[2];
+
+        rp->sr = vrcur->TexCoords[0];
+        rp->tr = vrcur->TexCoords[1];
+
+        NewRSlope = false;
+    }
+    else
+    {
+        rp->rr += rp->rri;
+        rp->gr += rp->gri;
+        rp->br += rp->bri;
+
+        rp->sr += rp->sri;
+        rp->tr += rp->tri;
+    }
+    Interpolator<0> interpX(xstart, xend+1, rp->wl, rp->wr);
+
+    u32 vr, vg, vb;
+    s16 s, t;
+    s32 z;
+
+    u32 ri, gi, bi;
+    s16 si, ti;
+    s32 zi;
+
+    if (interpX.linear)
+    {
+        zi = interpX.InterpolateZ(rp->zl, rp->zr, polygon->WBuffer);
+        ri = interpX.Interpolate(rp->rl, rp->rr);
+        gi = interpX.Interpolate(rp->gl, rp->gr);
+        bi = interpX.Interpolate(rp->bl, rp->br);
+
+        si = interpX.Interpolate(rp->sl, rp->sr);
+        ti = interpX.Interpolate(rp->tl, rp->tr);
+    }
     // in wireframe mode, there are special rules for equal Z (TODO)
 
     int yedge = 0;
@@ -1055,7 +1170,6 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     int edge;
 
     s32 x = xstart;
-    Interpolator<0> interpX(xstart, xend+1, wl, wr);
 
     if (x < 0) x = 0;
     s32 xlimit;
@@ -1073,7 +1187,16 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
         if (xcov == 0x3FF) xcov = 0;
     }
 
-    if (!l_filledge) x = xlimit;
+    if (!l_filledge)
+    {
+        x = xlimit;
+        vr = rp->rl + ri * l_edgelen;
+        vg = rp->gl + gi * l_edgelen;
+        vb = rp->bl + bi * l_edgelen;
+        s = rp->sl + si * l_edgelen;
+        t = rp->tl + ti * l_edgelen;
+        z = rp->zl + zi * l_edgelen;
+    }
     else
     for (; x < xlimit; x++)
     {
@@ -1092,9 +1215,22 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
                 dstattr &= ~0xF; // quick way to prevent drawing the shadow under antialiased edges
         }
 
-        interpX.SetX(x);
-
-        s32 z = interpX.InterpolateZ(zl, zr, polygon->WBuffer);
+        if (!interpX.linear)
+        {
+            interpX.SetX(x);
+            z = interpX.InterpolateZ(rp->zl, rp->zr, polygon->WBuffer);
+        }
+        else
+        {
+            if (x == xstart)
+            {
+                z = rp->zl;
+            }
+            else
+            {
+                z += zi;
+            }
+        }
 
         // if depth test against the topmost pixel fails, test
         // against the pixel underneath
@@ -1108,12 +1244,34 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
                 continue;
         }
 
-        u32 vr = interpX.Interpolate(rl, rr);
-        u32 vg = interpX.Interpolate(gl, gr);
-        u32 vb = interpX.Interpolate(bl, br);
+        if (!interpX.linear)
+        {
+            vr = interpX.Interpolate(rp->rl, rp->rr);
+            vg = interpX.Interpolate(rp->gl, rp->gr);
+            vb = interpX.Interpolate(rp->bl, rp->br);
 
-        s16 s = interpX.Interpolate(sl, sr);
-        s16 t = interpX.Interpolate(tl, tr);
+            s = interpX.Interpolate(rp->sl, rp->sr);
+            t = interpX.Interpolate(rp->tl, rp->tr);
+        }
+        else
+        {
+            if (x == xstart)
+            {
+                vr = rp->rl;
+                vg = rp->gl;
+                vb = rp->bl;
+                s = rp->sl;
+                t = rp->tl;
+            }
+            else
+            {
+                vr += ri;
+                vg += gi;
+                vb += bi;
+                s += si;
+                t += ti;
+            }
+        }
 
         u32 color = RenderPixel(polygon, vr>>3, vg>>3, vb>>3, s, t);
         u8 alpha = color >> 24;
@@ -1169,7 +1327,17 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
     if (xlimit > xend+1) xlimit = xend+1;
     if (xlimit > 256) xlimit = 256;
 
-    if (wireframe && !edge) x = std::max(x, xlimit);
+    if (wireframe && !edge)
+    {
+        x = std::max(x, xlimit);
+        
+        vr = rp->rl + ri * (x - (xstart + l_edgelen));
+        vg = rp->gl + gi * (x - (xstart + l_edgelen));
+        vb = rp->bl + bi * (x - (xstart + l_edgelen));
+        s = rp->sl + si * (x - (xstart + l_edgelen));
+        t = rp->tl + ti * (x - (xstart + l_edgelen));
+        z = rp->zl + zi * (x - (xstart + l_edgelen));
+    }
     else
     for (; x < xlimit; x++)
     {
@@ -1188,9 +1356,13 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
                 dstattr &= ~0xF; // quick way to prevent drawing the shadow under antialiased edges
         }
 
-        interpX.SetX(x);
-
-        s32 z = interpX.InterpolateZ(zl, zr, polygon->WBuffer);
+        if (!interpX.linear)
+        {
+            interpX.SetX(x);
+            z = interpX.InterpolateZ(rp->zl, rp->zr, polygon->WBuffer);
+        }
+        else
+            z += zi;
 
         // if depth test against the topmost pixel fails, test
         // against the pixel underneath
@@ -1203,13 +1375,24 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
             if (!fnDepthTest(DepthBuffer[pixeladdr], z, dstattr))
                 continue;
         }
+        
+        if (!interpX.linear)
+        {
+            vr = interpX.Interpolate(rp->rl, rp->rr);
+            vg = interpX.Interpolate(rp->gl, rp->gr);
+            vb = interpX.Interpolate(rp->bl, rp->br);
 
-        u32 vr = interpX.Interpolate(rl, rr);
-        u32 vg = interpX.Interpolate(gl, gr);
-        u32 vb = interpX.Interpolate(bl, br);
-
-        s16 s = interpX.Interpolate(sl, sr);
-        s16 t = interpX.Interpolate(tl, tr);
+            s = interpX.Interpolate(rp->sl, rp->sr);
+            t = interpX.Interpolate(rp->tl, rp->tr);
+        }
+        else
+        {
+            vr += ri;
+            vg += gi;
+            vb += bi;
+            s += si;
+            t += ti;
+        }
 
         u32 color = RenderPixel(polygon, vr>>3, vg>>3, vb>>3, s, t);
         u8 alpha = color >> 24;
@@ -1280,9 +1463,13 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
                 dstattr &= ~0xF; // quick way to prevent drawing the shadow under antialiased edges
         }
 
-        interpX.SetX(x);
-
-        s32 z = interpX.InterpolateZ(zl, zr, polygon->WBuffer);
+        if (!interpX.linear)
+        {
+            interpX.SetX(x);
+            z = interpX.InterpolateZ(rp->zl, rp->zr, polygon->WBuffer);
+        }
+        else
+            z += zi;
 
         // if depth test against the topmost pixel fails, test
         // against the pixel underneath
@@ -1295,13 +1482,24 @@ void SoftRenderer::RenderPolygonScanline(RendererPolygon* rp, s32 y)
             if (!fnDepthTest(DepthBuffer[pixeladdr], z, dstattr))
                 continue;
         }
+        
+        if (!interpX.linear)
+        {
+            vr = interpX.Interpolate(rp->rl, rp->rr);
+            vg = interpX.Interpolate(rp->gl, rp->gr);
+            vb = interpX.Interpolate(rp->bl, rp->br);
 
-        u32 vr = interpX.Interpolate(rl, rr);
-        u32 vg = interpX.Interpolate(gl, gr);
-        u32 vb = interpX.Interpolate(bl, br);
-
-        s16 s = interpX.Interpolate(sl, sr);
-        s16 t = interpX.Interpolate(tl, tr);
+            s = interpX.Interpolate(rp->sl, rp->sr);
+            t = interpX.Interpolate(rp->tl, rp->tr);
+        }
+        else
+        {
+            vr += ri;
+            vg += gi;
+            vb += bi;
+            s += si;
+            t += ti;
+        }
 
         u32 color = RenderPixel(polygon, vr>>3, vg>>3, vb>>3, s, t);
         u8 alpha = color >> 24;
