@@ -160,7 +160,7 @@ bool GdbARM9BreakOnStartup;
 #endif
 
 CameraConfig Camera[2];
-
+int LcdBlend;
 
 const char* kConfigFile = "melonDS.ini";
 const char* kUniqueConfigFile = "melonDS.%d.ini";
@@ -352,6 +352,7 @@ ConfigEntry ConfigFile[] =
     {"DSiBatteryCharging", 1, &DSiBatteryCharging, true, true},
 
     {"DSiFullBIOSBoot", 1, &DSiFullBIOSBoot, false, true},
+    {"LcdBlend", 0, &LcdBlend, 50, true},
 
 #ifdef GDBSTUB_ENABLED
     {"GdbEnabled", 1, &GdbEnabled, false, false},

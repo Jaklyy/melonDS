@@ -611,6 +611,25 @@ void ScreenPanelNative::setupScreenLayout()
     }
 }
 
+u32 DoInterframeBlending(u32 pixelnew, u32 pixelold)
+{
+    u8 newr = pixelnew & 0xFF;
+    u8 newg = (pixelnew >> 8) & 0xFF;
+    u8 newb = (pixelnew >> 16) & 0xFF;
+
+    u8 oldr = pixelold & 0xFF;
+    u8 oldg = (pixelold >> 8) & 0xFF;
+    u8 oldb = (pixelold >> 16) & 0xFF;
+
+    float percent = Config::LcdBlend;
+    
+    u8 r = (float)newr * ((100-percent)/100) + (float)oldr * (percent/100);
+    u8 g = (float)newg * ((100-percent)/100) + (float)oldg * (percent/100);
+    u8 b = (float)newb * ((100-percent)/100) + (float)oldb * (percent/100);
+
+    return r | g << 8 | b << 16 | 0xFF << 24;
+}
+
 void ScreenPanelNative::paintEvent(QPaintEvent* event)
 {
     QPainter painter(this);
@@ -628,9 +647,17 @@ void ScreenPanelNative::paintEvent(QPaintEvent* event)
             emuThread->FrontBufferLock.unlock();
             return;
         }
+        
+        u32* newtop = emuThread->NDS->GPU.Framebuffer[frontbuf][0].get();
+        u32* oldtop = emuThread->NDS->GPU.Framebuffer[!frontbuf][0].get();
+        u32* newbot = emuThread->NDS->GPU.Framebuffer[frontbuf][1].get();
+        u32* oldbot = emuThread->NDS->GPU.Framebuffer[!frontbuf][1].get();
+        for (int i = 0; i < 256*192; i++)
+        {    
+            ((u32*)(screen[0].scanLine(0)))[i] = DoInterframeBlending(newtop[i], oldtop[i]);
+            ((u32*)(screen[1].scanLine(0)))[i] = DoInterframeBlending(newbot[i], oldbot[i]);
+        }
 
-        memcpy(screen[0].scanLine(0), emuThread->NDS->GPU.Framebuffer[frontbuf][0].get(), 256 * 192 * 4);
-        memcpy(screen[1].scanLine(0), emuThread->NDS->GPU.Framebuffer[frontbuf][1].get(), 256 * 192 * 4);
         emuThread->FrontBufferLock.unlock();
 
         QRect screenrc(0, 0, 256, 192);
