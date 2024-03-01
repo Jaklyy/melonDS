@@ -19,6 +19,9 @@
 #pragma once
 
 #include "GPU2D.h"
+#include "Platform.h"
+#include <thread>
+#include <atomic>
 
 namespace melonDS
 {
@@ -32,6 +35,10 @@ class SoftRenderer : public Renderer2D
 public:
     SoftRenderer(melonDS::GPU& gpu);
     ~SoftRenderer() override {}
+
+    void Reset();
+
+    void CheckUpdates(u32 line, bool bg, bool obj);
 
     void DrawScanline(u32 line, Unit* unit) override;
     void DrawSprites(u32 line, Unit* unit) override;
@@ -142,6 +149,39 @@ private:
     template<bool window> void DrawSprite_Normal(u32 num, u32 width, u32 height, s32 xpos, s32 ypos);
 
     void DoCapture(u32 line, u32 width);
+
+    // threaded renderer stuffs
+
+    void StopRenderThread();
+    void SetupRenderThread();
+    void WaitDone();
+    void CleanupPointers(u8 prevpos);
+    void RenderThreadFunc();
+
+    bool Threaded;
+
+    Platform::Mutex* Mutex_LinesRerender;
+    std::atomic_uint8_t LinesRerender = 0;
+    Platform::Mutex* Mutex_LinesAdvanced;
+    u8 LinesAdvanced = 0;
+    bool Start0 = false; // hack; JAKLY: FIND A BETTER WAY TO DO THIS PLEASE
+    std::atomic_bool Dirty[256];
+
+    u8 LastOrderedLine = 0;
+    u8 PrevRerender = 0;
+    u8* OAM[256];
+    u8* Palette[256];
+    u8* VramDispBank[256];
+    u16 VCount[256] {};
+    Unit* Units[2][256];
+    u32 FrameCounter = 0;
+    
+    std::atomic_bool RenderThreadRunning;
+    std::atomic_bool RenderThreadRendering;
+
+    Platform::Semaphore* Sema_RenderStart;
+    Platform::Semaphore* Sema_RenderFinish;
+    Platform::Thread* Thread_Render;
 };
 
 }

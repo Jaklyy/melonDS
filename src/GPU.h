@@ -512,17 +512,17 @@ public:
     void SetDispStat(u32 cpu, u16 val) noexcept;
 
     void SetVCount(u16 val) noexcept;
-    bool MakeVRAMFlat_ABGCoherent(NonStupidBitField<512*1024/VRAMDirtyGranularity>& dirty) noexcept;
-    bool MakeVRAMFlat_BBGCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept;
+    u8*  MakeVRAMFlat_ABGCoherent(NonStupidBitField<512*1024/VRAMDirtyGranularity>& dirty) noexcept;
+    u8*  MakeVRAMFlat_BBGCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept;
 
-    bool MakeVRAMFlat_AOBJCoherent(NonStupidBitField<256*1024/VRAMDirtyGranularity>& dirty) noexcept;
-    bool MakeVRAMFlat_BOBJCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept;
+    u8*  MakeVRAMFlat_AOBJCoherent(NonStupidBitField<256*1024/VRAMDirtyGranularity>& dirty) noexcept;
+    u8*  MakeVRAMFlat_BOBJCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept;
 
-    bool MakeVRAMFlat_ABGExtPalCoherent(NonStupidBitField<32*1024/VRAMDirtyGranularity>& dirty) noexcept;
-    bool MakeVRAMFlat_BBGExtPalCoherent(NonStupidBitField<32*1024/VRAMDirtyGranularity>& dirty) noexcept;
+    u8*  MakeVRAMFlat_ABGExtPalCoherent(NonStupidBitField<32*1024/VRAMDirtyGranularity>& dirty) noexcept;
+    u8*  MakeVRAMFlat_BBGExtPalCoherent(NonStupidBitField<32*1024/VRAMDirtyGranularity>& dirty) noexcept;
 
-    bool MakeVRAMFlat_AOBJExtPalCoherent(NonStupidBitField<8*1024/VRAMDirtyGranularity>& dirty) noexcept;
-    bool MakeVRAMFlat_BOBJExtPalCoherent(NonStupidBitField<8*1024/VRAMDirtyGranularity>& dirty) noexcept;
+    u8*  MakeVRAMFlat_AOBJExtPalCoherent(NonStupidBitField<8*1024/VRAMDirtyGranularity>& dirty) noexcept;
+    u8*  MakeVRAMFlat_BOBJExtPalCoherent(NonStupidBitField<8*1024/VRAMDirtyGranularity>& dirty) noexcept;
 
     bool MakeVRAMFlat_TextureCoherent(NonStupidBitField<512*1024/VRAMDirtyGranularity>& dirty) noexcept;
     bool MakeVRAMFlat_TexPalCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept;
@@ -531,6 +531,7 @@ public:
 
     melonDS::NDS& NDS;
     u16 VCount = 0;
+    bool VCountDirty = true;
     u16 TotalScanlines = 0;
     u16 DispStat[2] {};
     u8 VRAMCNT[9] {};
@@ -538,6 +539,8 @@ public:
 
     alignas(u64) u8 Palette[2*1024] {};
     alignas(u64) u8 OAM[2*1024] {};
+    u32 PaletteDirty = 0;
+    u32 OAMDirty = 0;
 
     alignas(u64) u8 VRAM_A[128*1024] {};
     alignas(u64) u8 VRAM_B[128*1024] {};
@@ -590,17 +593,17 @@ public:
 
     VRAMTrackingSet<512*1024, 128*1024> VRAMDirty_Texture {};
     VRAMTrackingSet<128*1024, 16*1024> VRAMDirty_TexPal {};
+    
+    u8* VRAMFlat_ABG[257];
+    u8* VRAMFlat_BBG[257];
+    u8* VRAMFlat_AOBJ[257];
+    u8* VRAMFlat_BOBJ[257];
 
-    u8 VRAMFlat_ABG[512*1024] {};
-    u8 VRAMFlat_BBG[128*1024] {};
-    u8 VRAMFlat_AOBJ[256*1024] {};
-    u8 VRAMFlat_BOBJ[128*1024] {};
+    u8* VRAMFlat_ABGExtPal[257];
+    u8* VRAMFlat_BBGExtPal[257];
 
-    alignas(u16) u8 VRAMFlat_ABGExtPal[32*1024] {};
-    alignas(u16) u8 VRAMFlat_BBGExtPal[32*1024] {};
-
-    alignas(u16) u8 VRAMFlat_AOBJExtPal[8*1024] {};
-    alignas(u16) u8 VRAMFlat_BOBJExtPal[8*1024] {};
+    u8* VRAMFlat_AOBJExtPal[257];
+    u8* VRAMFlat_BOBJExtPal[257];
 
     alignas(u64) u8 VRAMFlat_Texture[512*1024] {};
     alignas(u64) u8 VRAMFlat_TexPal[128*1024] {};
@@ -656,7 +659,7 @@ private:
     }
 
     template <u32 MappingGranularity, u32 Size>
-    constexpr bool CopyLinearVRAM(u8* flat, const u32* mappings, NonStupidBitField<Size>& dirty, u64 (GPU::* const slowAccess)(u32) const noexcept) noexcept
+    constexpr bool CopyLinearVRAM2(u8* flat, const u32* mappings, NonStupidBitField<Size>& dirty, u64 (GPU::* const slowAccess)(u32) const noexcept) noexcept
     {
         const u32 VRAMBitsPerMapping = MappingGranularity / VRAMDirtyGranularity;
 
@@ -682,6 +685,45 @@ private:
         }
         return change;
     }
+    
+    template <u32 MappingGranularity, u32 Size>
+    constexpr u8* CopyLinearVRAM(u8* flat, const u32* mappings, NonStupidBitField<Size>& dirty, u64 (GPU::* const slowAccess)(u32) const noexcept) noexcept
+    {
+        const u32 VRAMBitsPerMapping = MappingGranularity / VRAMDirtyGranularity;
+
+        typename NonStupidBitField<Size>::Iterator it = dirty.Begin();
+        if (it != dirty.End())
+        {
+            u8* ret;
+            if (flat != nullptr)
+            {
+                ret = (u8*)malloc(VRAMDirtyGranularity * Size);
+                memcpy(ret, flat, VRAMDirtyGranularity * Size);
+                printf("%i\n", VRAMDirtyGranularity * Size);
+            }
+            else ret = (u8*)calloc(Size, VRAMDirtyGranularity);
+
+            while (it != dirty.End())
+            {
+                u32 offset = *it * VRAMDirtyGranularity;
+                u8* dst = ret + offset;
+                u8* fastAccess = GetUniqueBankPtr(mappings[*it / VRAMBitsPerMapping], offset);
+                if (fastAccess)
+                {
+                    memcpy(dst, fastAccess, VRAMDirtyGranularity);
+                }
+                else
+                {
+                    for (u32 i = 0; i < VRAMDirtyGranularity; i += 8)
+                        *(u64*)&dst[i] = (this->*slowAccess)(offset + i);
+                }
+                it++;
+            }
+            flat = ret;
+            return ret;
+        }
+        else return nullptr;
+    }
 
     u32 NextVCount = 0;
 
@@ -690,9 +732,6 @@ private:
     u16 VMatch[2] {};
 
     std::unique_ptr<GPU2D::Renderer2D> GPU2D_Renderer = nullptr;
-
-    u32 OAMDirty = 0;
-    u32 PaletteDirty = 0;
 };
 }
 

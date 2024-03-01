@@ -90,6 +90,59 @@ Unit::Unit(u32 num, melonDS::GPU& gpu) : Num(num), GPU(gpu)
 {
 }
 
+Unit::Unit(const Unit& unit, melonDS::GPU& gpu) : GPU(gpu)
+{
+    Num = unit.Num;
+    Enabled = unit.Enabled;
+    Dirty = unit.Dirty;
+
+    memcpy(DispFIFO, unit.DispFIFO, sizeof(DispFIFO));
+    DispFIFOReadPtr = unit.DispFIFOReadPtr;
+    DispFIFOWritePtr = unit.DispFIFOWritePtr;
+
+    memcpy(DispFIFOBuffer, unit.DispFIFOBuffer, sizeof(DispFIFOBuffer));
+
+    DispCnt = unit.DispCnt;
+    memcpy(BGCnt, unit.BGCnt, sizeof(BGCnt));
+
+    memcpy(BGXPos, unit.BGXPos, sizeof(BGXPos));
+    memcpy(BGYPos, unit.BGYPos, sizeof(BGYPos));
+
+    memcpy(BGXRef, unit.BGXRef, sizeof(BGXRef));
+    memcpy(BGYRef, unit.BGYRef, sizeof(BGYRef));
+    memcpy(BGXRefInternal, unit.BGXRefInternal, sizeof(BGXRefInternal));
+    memcpy(BGYRefInternal, unit.BGYRefInternal, sizeof(BGYRefInternal));
+    memcpy(BGRotA, unit.BGRotA, sizeof(BGRotA));
+    memcpy(BGRotB, unit.BGRotB, sizeof(BGRotB));
+    memcpy(BGRotC, unit.BGRotC, sizeof(BGRotC));
+    memcpy(BGRotD, unit.BGRotD, sizeof(BGRotD));
+
+    memcpy(Win0Coords, unit.Win0Coords, sizeof(Win0Coords));
+    memcpy(Win1Coords, unit.Win1Coords, sizeof(Win1Coords));
+    memcpy(WinCnt, unit.WinCnt, sizeof(WinCnt));
+    Win0Active = unit.Win0Active;
+    Win1Active = unit.Win1Active;
+
+    memcpy(BGMosaicSize, unit.BGMosaicSize, sizeof(BGMosaicSize));
+    memcpy(OBJMosaicSize, unit.OBJMosaicSize, sizeof(OBJMosaicSize));
+    BGMosaicY = unit.BGMosaicY;
+    BGMosaicYMax = unit.BGMosaicYMax;
+    OBJMosaicYCount = unit.OBJMosaicYCount;
+    OBJMosaicY = unit.OBJMosaicY;
+    OBJMosaicYMax = unit.OBJMosaicYMax;
+
+    BlendCnt = unit.BlendCnt;
+    BlendAlpha = unit.BlendAlpha;
+    EVA = unit.EVA;
+    EVB = unit.EVB;
+    EVY = unit.EVY;
+
+    CaptureLatch = unit.CaptureLatch;
+    CaptureCnt = unit.CaptureCnt;
+
+    MasterBrightness = unit.MasterBrightness;
+}
+
 void Unit::Reset()
 {
     Enabled = false;
@@ -267,6 +320,7 @@ u32 Unit::Read32(u32 addr)
 
 void Unit::Write8(u32 addr, u8 val)
 {
+    Dirty = true;
     switch (addr & 0x00000FFF)
     {
     case 0x000:
@@ -371,6 +425,7 @@ void Unit::Write8(u32 addr, u8 val)
 
 void Unit::Write16(u32 addr, u16 val)
 {
+    Dirty = true;
     switch (addr & 0x00000FFF)
     {
     case 0x000:
@@ -515,6 +570,7 @@ void Unit::Write16(u32 addr, u16 val)
 
 void Unit::Write32(u32 addr, u32 val)
 {
+    Dirty = true;
     switch (addr & 0x00000FFF)
     {
     case 0x000:
@@ -623,20 +679,20 @@ void Unit::SampleFIFO(u32 offset, u32 num)
     }
 }
 
-u16* Unit::GetBGExtPal(u32 slot, u32 pal)
+u16* Unit::GetBGExtPal(u32 slot, u32 pal, u8 pos)
 {
     const u32 PaletteSize = 256 * 2;
     const u32 SlotSize = PaletteSize * 16;
     return (u16*)&(Num == 0
-         ? GPU.VRAMFlat_ABGExtPal
-         : GPU.VRAMFlat_BBGExtPal)[slot * SlotSize + pal * PaletteSize];
+         ? GPU.VRAMFlat_ABGExtPal[pos]
+         : GPU.VRAMFlat_BBGExtPal[pos])[slot * SlotSize + pal * PaletteSize];
 }
 
-u16* Unit::GetOBJExtPal()
+u16* Unit::GetOBJExtPal(u8 pos)
 {
     return Num == 0
-         ? (u16*)GPU.VRAMFlat_AOBJExtPal
-         : (u16*)GPU.VRAMFlat_BOBJExtPal;
+         ? (u16*)GPU.VRAMFlat_AOBJExtPal[pos]
+         : (u16*)GPU.VRAMFlat_BOBJExtPal[pos];
 }
 
 void Unit::CheckWindows(u32 line)
@@ -694,30 +750,30 @@ void Unit::CalculateWindowMask(u32 line, u8* windowMask, const u8* objWindow)
     }
 }
 
-void Unit::GetBGVRAM(u8*& data, u32& mask) const
+void Unit::GetBGVRAM(u8*& data, u32& mask, u8 pos) const
 {
     if (Num == 0)
     {
-        data = GPU.VRAMFlat_ABG;
+        data = GPU.VRAMFlat_ABG[pos];
         mask = 0x7FFFF;
     }
     else
     {
-        data = GPU.VRAMFlat_BBG;
+        data = GPU.VRAMFlat_BBG[pos];
         mask = 0x1FFFF;
     }
 }
 
-void Unit::GetOBJVRAM(u8*& data, u32& mask) const
+void Unit::GetOBJVRAM(u8*& data, u32& mask, u8 pos) const
 {
     if (Num == 0)
     {
-        data = GPU.VRAMFlat_AOBJ;
+        data = GPU.VRAMFlat_AOBJ[pos];
         mask = 0x3FFFF;
     }
     else
     {
-        data = GPU.VRAMFlat_BOBJ;
+        data = GPU.VRAMFlat_BOBJ[pos];
         mask = 0x1FFFF;
     }
 }

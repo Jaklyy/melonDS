@@ -24,10 +24,88 @@ namespace melonDS
 {
 namespace GPU2D
 {
+
+void RenderThreadFunc();
+
+
+void SoftRenderer::StopRenderThread()
+{
+    if (RenderThreadRunning.load(std::memory_order_relaxed))
+    {
+        // Tell the render thread to stop drawing new frames, and finish up the current one.
+        RenderThreadRunning = false;
+
+        Platform::Semaphore_Post(Sema_RenderStart);
+
+        Platform::Thread_Wait(Thread_Render);
+        Platform::Thread_Free(Thread_Render);
+        Thread_Render = nullptr;
+    }
+}
+
+void SoftRenderer::SetupRenderThread()
+{
+    if (Threaded)
+    {
+        if (!RenderThreadRunning.load(std::memory_order_relaxed))
+        {
+            RenderThreadRunning = true;
+            Thread_Render = Platform::Thread_Create([this]() {
+                RenderThreadFunc();
+            });
+        }
+
+        Platform::Semaphore_Reset(Sema_RenderStart);
+
+        if (RenderThreadRendering)
+            Platform::Semaphore_Wait(Sema_RenderFinish);
+            
+        Platform::Semaphore_Reset(Sema_RenderStart);
+        Platform::Semaphore_Reset(Sema_RenderFinish);
+    }
+    else
+    {
+        StopRenderThread();
+    }
+}
+
+void SoftRenderer::WaitDone()
+{
+    Platform::Semaphore_Wait(Sema_RenderFinish);
+}
+
 SoftRenderer::SoftRenderer(melonDS::GPU& gpu)
-    : Renderer2D(), GPU(gpu)
+    : Renderer2D(), GPU(gpu), Threaded(true)
 {
     // mosaic table is initialized at compile-time
+
+    Sema_RenderStart = Platform::Semaphore_Create();
+    Sema_RenderFinish = Platform::Semaphore_Create();
+    Mutex_LinesAdvanced = Platform::Mutex_Create();
+    Mutex_LinesRerender = Platform::Mutex_Create();
+    
+    GPU.VRAMFlat_ABG[0] = (u8*)calloc(1024, 512);
+    GPU.VRAMFlat_BBG[0] = (u8*)calloc(1024, 128);
+    GPU.VRAMFlat_AOBJ[0] = (u8*)calloc(1024, 256);
+    GPU.VRAMFlat_BOBJ[0] = (u8*)calloc(1024, 128);
+    GPU.VRAMFlat_ABGExtPal[0] = (u8*)calloc(1024, 32);
+    GPU.VRAMFlat_BBGExtPal[0] = (u8*)calloc(1024, 32);
+    GPU.VRAMFlat_AOBJExtPal[0] = (u8*)calloc(1024, 8);
+    GPU.VRAMFlat_BOBJExtPal[0] = (u8*)calloc(1024, 8);
+    VramDispBank[0] = (u8*)calloc(1024, 128);
+    Units[0][0] = new Unit(0, gpu);
+    Units[1][0] = new Unit(1, gpu);
+    OAM[0] = (u8*)calloc(1024, 2);
+    Palette[0] = (u8*)calloc(1024, 2);
+
+    RenderThreadRunning = false;
+    RenderThreadRendering = false;
+    Thread_Render = nullptr;
+}
+
+void SoftRenderer::Reset()
+{
+    SetupRenderThread();
 }
 
 u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
@@ -102,34 +180,187 @@ u32 SoftRenderer::ColorComposite(int i, u32 val1, u32 val2) const
     return val1;
 }
 
+void SoftRenderer::CheckUpdates(u32 line, bool bg, bool obj)
+{
+    u8* abgptr = nullptr;
+    u8* abgpalptr = nullptr;
+    u8* aobjpalptr = nullptr;
+    u8* bbgptr = nullptr;
+    u8* bbgpalptr = nullptr;
+    u8* bobjpalptr = nullptr;
+    bool lcdcdirty = false;
+    u32 bankallocated = -1;
+    u8* aobjptr = nullptr;
+    u8* bobjptr = nullptr;
+    if (bg)
+    {
+        // latch display capture here because idk
+        if (GPU.VCount == 0 && GPU.GPU2D_A.CaptureCnt & (1 << 31))
+            GPU.GPU2D_A.CaptureLatch = true;
+
+        // JAKLY: Don't re-render an engine that didn't get updated.
+        auto abgdirty = GPU.VRAMDirty_ABG.DeriveState(GPU.VRAMMap_ABG, GPU);
+        abgptr = GPU.MakeVRAMFlat_ABGCoherent(abgdirty);
+        auto abgpaldirty = GPU.VRAMDirty_ABGExtPal.DeriveState(GPU.VRAMMap_ABGExtPal, GPU);
+        abgpalptr = GPU.MakeVRAMFlat_ABGExtPalCoherent(abgpaldirty);
+        auto aobjpaldirty = GPU.VRAMDirty_AOBJExtPal.DeriveState(&GPU.VRAMMap_AOBJExtPal, GPU);
+        aobjpalptr = GPU.MakeVRAMFlat_AOBJExtPalCoherent(aobjpaldirty);
+
+        auto bbgdirty = GPU.VRAMDirty_BBG.DeriveState(GPU.VRAMMap_BBG, GPU);
+        bbgptr = GPU.MakeVRAMFlat_BBGCoherent(bbgdirty);
+        auto bbgpaldirty = GPU.VRAMDirty_BBGExtPal.DeriveState(GPU.VRAMMap_BBGExtPal, GPU);
+        bbgpalptr = GPU.MakeVRAMFlat_BBGExtPalCoherent(bbgpaldirty);
+        auto bobjpaldirty = GPU.VRAMDirty_BOBJExtPal.DeriveState(&GPU.VRAMMap_BOBJExtPal, GPU);
+        bobjpalptr = GPU.MakeVRAMFlat_BOBJExtPalCoherent(bobjpaldirty);
+
+        if (((GPU.GPU2D_A.DispCnt >> 16) & 0x3) == 2)
+        {
+            u32 vrambank = (GPU.GPU2D_A.DispCnt >> 18) & 0x3;
+            if (GPU.VRAMMap_LCDC & (1<<vrambank))
+            {
+                bankallocated = vrambank;
+                for (int i = 0; i < 256; i++)
+                    if (GPU.VRAMDirty[bankallocated][i])
+                    {
+                        lcdcdirty = true;
+                        GPU.VRAMDirty[bankallocated].Clear(); // please dont break literally everything
+                        break;
+                    }
+            }
+        }
+    }
+    if (obj)
+    {
+        auto aobjdirty = GPU.VRAMDirty_AOBJ.DeriveState(GPU.VRAMMap_AOBJ, GPU);
+        aobjptr = GPU.MakeVRAMFlat_AOBJCoherent(aobjdirty);
+        auto bobjdirty = GPU.VRAMDirty_BOBJ.DeriveState(GPU.VRAMMap_BOBJ, GPU);
+        bobjptr = GPU.MakeVRAMFlat_BOBJCoherent(bobjdirty);
+    }
+
+    if ((bg ? (abgptr != nullptr || abgpalptr != nullptr || aobjpalptr != nullptr || bbgptr != nullptr ||
+        bbgpalptr != nullptr || bobjpalptr != nullptr || lcdcdirty || GPU.VCountDirty || GPU.PaletteDirty) : false) ||
+        (obj ? (aobjptr != nullptr || bobjptr != nullptr || GPU.OAMDirty) : false) || (GPU.GPU2D_A.Dirty || GPU.GPU2D_B.Dirty))
+    {
+        u8 nextrender = PrevRerender+1;
+        // cache vram
+        if (bg && abgptr) GPU.VRAMFlat_ABG[nextrender] = abgptr;
+        else GPU.VRAMFlat_ABG[nextrender] = GPU.VRAMFlat_ABG[PrevRerender];
+
+        if (bg && abgpalptr) GPU.VRAMFlat_ABGExtPal[nextrender] = abgpalptr;
+        else GPU.VRAMFlat_ABGExtPal[nextrender] = GPU.VRAMFlat_ABGExtPal[PrevRerender];
+
+        if (bg && aobjpalptr) GPU.VRAMFlat_AOBJExtPal[nextrender] = aobjpalptr;
+        else GPU.VRAMFlat_AOBJExtPal[nextrender] = GPU.VRAMFlat_AOBJExtPal[PrevRerender];
+
+        if (bg && bbgptr) GPU.VRAMFlat_BBG[nextrender] = bbgptr;
+        else GPU.VRAMFlat_BBG[nextrender] = GPU.VRAMFlat_BBG[PrevRerender];
+
+        if (bg && bbgpalptr) GPU.VRAMFlat_BBGExtPal[nextrender] = bbgpalptr;
+        else GPU.VRAMFlat_BBGExtPal[nextrender] = GPU.VRAMFlat_BBGExtPal[PrevRerender];
+
+        if (bg && bobjpalptr) GPU.VRAMFlat_BOBJExtPal[nextrender] = bobjpalptr;
+        else GPU.VRAMFlat_BOBJExtPal[nextrender] = GPU.VRAMFlat_BOBJExtPal[PrevRerender];
+        
+        // cache vram display bank if in use
+        if (bg && (bankallocated == -1))
+        {
+            if (lcdcdirty)
+            {
+                VramDispBank[nextrender] = (u8*)malloc(128*1024);
+                memcpy(VramDispBank[nextrender], GPU.VRAM[bankallocated], 128*1024);
+            }
+            else VramDispBank[nextrender] = VramDispBank[PrevRerender];
+        }
+        else VramDispBank[nextrender] = nullptr;
+
+        // cache vcount; it probably doesn't matter if we just always update it
+        if (bg) VCount[nextrender] = GPU.VCount;
+
+        // cache palette
+        if (bg && GPU.PaletteDirty)
+        {
+            Palette[nextrender] = (u8*)malloc(sizeof(GPU.Palette));
+            memcpy(Palette[nextrender], GPU.Palette, sizeof(GPU.Palette));
+            GPU.PaletteDirty = 0;
+        }
+        else Palette[nextrender] = Palette[PrevRerender];
+
+        if (obj && aobjptr) GPU.VRAMFlat_AOBJ[nextrender] = aobjptr;
+        else GPU.VRAMFlat_AOBJ[nextrender] = GPU.VRAMFlat_AOBJ[PrevRerender];
+
+        if (obj && bobjptr) GPU.VRAMFlat_BOBJ[nextrender] = bobjptr;
+        else GPU.VRAMFlat_BOBJ[nextrender] = GPU.VRAMFlat_BOBJ[PrevRerender];
+            
+        if (obj && GPU.OAMDirty)
+        {
+            OAM[nextrender] = (u8*)malloc(sizeof(GPU.OAM));
+            memcpy(OAM[nextrender], GPU.OAM, sizeof(GPU.OAM));
+            GPU.OAMDirty = 0;
+        }
+        else OAM[nextrender] = OAM[PrevRerender];
+
+        // cache gpu2d vars
+        if (GPU.GPU2D_A.Dirty)
+        {
+            Units[0][nextrender] = new Unit(GPU.GPU2D_A, GPU);
+            GPU.GPU2D_A.Dirty = false;
+        }
+        else Units[0][nextrender] = Units[0][PrevRerender];
+
+        if (GPU.GPU2D_B.Dirty)
+        {
+            Units[1][nextrender] = new Unit(GPU.GPU2D_B, GPU);
+            GPU.GPU2D_B.Dirty = false;
+        }
+        else Units[1][nextrender] = Units[1][PrevRerender];
+
+        if (line > 0 && Start0)
+        {
+            Platform::Mutex_Lock(Mutex_LinesAdvanced);
+            if (LinesAdvanced > line)
+            {
+                Platform::Mutex_Lock(Mutex_LinesRerender);
+                LinesRerender++;
+                Dirty[nextrender] = true;
+                Platform::Mutex_Unlock(Mutex_LinesRerender);
+            }
+            else
+            {
+                Dirty[line] = true;
+            }
+            Platform::Mutex_Unlock(Mutex_LinesAdvanced);
+
+            if (!RenderThreadRendering.load(std::memory_order_relaxed))
+            {
+                Semaphore_Reset(Sema_RenderFinish);
+                Semaphore_Post(Sema_RenderStart);
+            }
+        }
+        PrevRerender++;
+    }
+
+    if (line <= 1)
+    {
+        if (line == 0)
+        {
+            Start0 = true;
+            Semaphore_Post(Sema_RenderStart);
+        }
+        else if (!Start0 && line == 1)
+        {
+            Semaphore_Post(Sema_RenderStart);
+        }
+    }
+}
+
 void SoftRenderer::DrawScanline(u32 line, Unit* unit)
 {
     CurUnit = unit;
-
     int stride = GPU.GPU3D.IsRendererAccelerated() ? (256*3 + 1) : 256;
     u32* dst = &Framebuffer[CurUnit->Num][stride * line];
 
     int n3dline = line;
-    line = GPU.VCount;
-
-    if (CurUnit->Num == 0)
-    {
-        auto bgDirty = GPU.VRAMDirty_ABG.DeriveState(GPU.VRAMMap_ABG, GPU);
-        GPU.MakeVRAMFlat_ABGCoherent(bgDirty);
-        auto bgExtPalDirty = GPU.VRAMDirty_ABGExtPal.DeriveState(GPU.VRAMMap_ABGExtPal, GPU);
-        GPU.MakeVRAMFlat_ABGExtPalCoherent(bgExtPalDirty);
-        auto objExtPalDirty = GPU.VRAMDirty_AOBJExtPal.DeriveState(&GPU.VRAMMap_AOBJExtPal, GPU);
-        GPU.MakeVRAMFlat_AOBJExtPalCoherent(objExtPalDirty);
-    }
-    else
-    {
-        auto bgDirty = GPU.VRAMDirty_BBG.DeriveState(GPU.VRAMMap_BBG, GPU);
-        GPU.MakeVRAMFlat_BBGCoherent(bgDirty);
-        auto bgExtPalDirty = GPU.VRAMDirty_BBGExtPal.DeriveState(GPU.VRAMMap_BBGExtPal, GPU);
-        GPU.MakeVRAMFlat_BBGExtPalCoherent(bgExtPalDirty);
-        auto objExtPalDirty = GPU.VRAMDirty_BOBJExtPal.DeriveState(&GPU.VRAMMap_BOBJExtPal, GPU);
-        GPU.MakeVRAMFlat_BOBJExtPalCoherent(objExtPalDirty);
-    }
+    line = VCount[LastOrderedLine];
 
     bool forceblank = false;
 
@@ -140,9 +371,6 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
     // GPU B can be completely disabled by POWCNT1
     // oddly that's not the case for GPU A
     if (CurUnit->Num && !CurUnit->Enabled) forceblank = true;
-
-    if (line == 0 && CurUnit->CaptureCnt & (1 << 31) && !forceblank)
-        CurUnit->CaptureLatch = true;
 
     if (CurUnit->Num == 0)
     {
@@ -193,10 +421,9 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
 
     case 2: // VRAM display
         {
-            u32 vrambank = (CurUnit->DispCnt >> 18) & 0x3;
-            if (GPU.VRAMMap_LCDC & (1<<vrambank))
+            if (VramDispBank[LastOrderedLine])
             {
-                u16* vram = (u16*)GPU.VRAM[vrambank];
+                u16* vram = (u16*)VramDispBank[LastOrderedLine];
                 vram = &vram[line * 256];
 
                 for (int i = 0; i < 256; i++)
@@ -247,7 +474,7 @@ void SoftRenderer::DrawScanline(u32 line, Unit* unit)
         }
 
         if (line < capheight)
-            DoCapture(line, capwidth);
+            DoCapture(line, capwidth); // JAKLY: HANDLE THIS PROPERLY EVENTUALLY
     }
 
     u32 masterBrightness = CurUnit->MasterBrightness;
@@ -697,8 +924,8 @@ void SoftRenderer::DrawScanline_BGOBJ(u32 line)
     }
 
     u64 backdrop;
-    if (CurUnit->Num) backdrop = *(u16*)&GPU.Palette[0x400];
-    else     backdrop = *(u16*)&GPU.Palette[0];
+    if (CurUnit->Num) backdrop = *(u16*)&(Palette[LastOrderedLine])[0x400];
+    else     backdrop = *(u16*)&(Palette[LastOrderedLine])[0];
 
     {
         u8 r = (backdrop & 0x001F) << 1;
@@ -932,20 +1159,20 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
 
     u8* bgvram;
     u32 bgvrammask;
-    CurUnit->GetBGVRAM(bgvram, bgvrammask);
+    CurUnit->GetBGVRAM(bgvram, bgvrammask, LastOrderedLine);
     if (CurUnit->Num)
     {
         tilesetaddr = ((bgcnt & 0x003C) << 12);
         tilemapaddr = ((bgcnt & 0x1F00) << 3);
 
-        pal = (u16*)&GPU.Palette[0x400];
+        pal = (u16*)&(Palette[LastOrderedLine])[0x400];
     }
     else
     {
         tilesetaddr = ((CurUnit->DispCnt & 0x07000000) >> 8) + ((bgcnt & 0x003C) << 12);
         tilemapaddr = ((CurUnit->DispCnt & 0x38000000) >> 11) + ((bgcnt & 0x1F00) << 3);
 
-        pal = (u16*)&GPU.Palette[0];
+        pal = (u16*)&(Palette[LastOrderedLine])[0];
     }
 
     // adjust Y position in tilemap
@@ -973,7 +1200,7 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
         {
             curtile = *(u16*)&bgvram[(tilemapaddr + ((xoff & 0xF8) >> 2) + ((xoff & widexmask) << 3)) & bgvrammask];
 
-            if (extpal) curpal = CurUnit->GetBGExtPal(extpalslot, curtile>>12);
+            if (extpal) curpal = CurUnit->GetBGExtPal(extpalslot, curtile>>12, LastOrderedLine);
             else        curpal = pal;
 
             pixelsaddr = tilesetaddr + ((curtile & 0x03FF) << 6)
@@ -994,7 +1221,7 @@ void SoftRenderer::DrawBG_Text(u32 line, u32 bgnum)
                 // load a new tile
                 curtile = *(u16*)&bgvram[(tilemapaddr + ((xpos & 0xF8) >> 2) + ((xpos & widexmask) << 3)) & bgvrammask];
 
-                if (extpal) curpal = CurUnit->GetBGExtPal(extpalslot, curtile>>12);
+                if (extpal) curpal = CurUnit->GetBGExtPal(extpalslot, curtile>>12, LastOrderedLine);
                 else        curpal = pal;
 
                 pixelsaddr = tilesetaddr + ((curtile & 0x03FF) << 6)
@@ -1110,21 +1337,21 @@ void SoftRenderer::DrawBG_Affine(u32 line, u32 bgnum)
 
     u8* bgvram;
     u32 bgvrammask;
-    CurUnit->GetBGVRAM(bgvram, bgvrammask);
+    CurUnit->GetBGVRAM(bgvram, bgvrammask, LastOrderedLine);
 
     if (CurUnit->Num)
     {
         tilesetaddr = ((bgcnt & 0x003C) << 12);
         tilemapaddr = ((bgcnt & 0x1F00) << 3);
 
-        pal = (u16*)&GPU.Palette[0x400];
+        pal = (u16*)&(Palette[LastOrderedLine])[0x400];
     }
     else
     {
         tilesetaddr = ((CurUnit->DispCnt & 0x07000000) >> 8) + ((bgcnt & 0x003C) << 12);
         tilemapaddr = ((CurUnit->DispCnt & 0x38000000) >> 11) + ((bgcnt & 0x1F00) << 3);
 
-        pal = (u16*)&GPU.Palette[0];
+        pal = (u16*)&(Palette[LastOrderedLine])[0];
     }
 
     u16 curtile;
@@ -1183,7 +1410,7 @@ void SoftRenderer::DrawBG_Extended(u32 line, u32 bgnum)
 
     u8* bgvram;
     u32 bgvrammask;
-    CurUnit->GetBGVRAM(bgvram, bgvrammask);
+    CurUnit->GetBGVRAM(bgvram, bgvrammask, LastOrderedLine);
 
     extpal = (CurUnit->DispCnt & 0x40000000);
 
@@ -1271,8 +1498,8 @@ void SoftRenderer::DrawBG_Extended(u32 line, u32 bgnum)
         {
             // 256-color bitmap
 
-            if (CurUnit->Num) pal = (u16*)&GPU.Palette[0x400];
-            else              pal = (u16*)&GPU.Palette[0];
+            if (CurUnit->Num) pal = (u16*)&(Palette[LastOrderedLine])[0x400];
+            else              pal = (u16*)&(Palette[LastOrderedLine])[0];
 
             u8 color;
 
@@ -1330,14 +1557,14 @@ void SoftRenderer::DrawBG_Extended(u32 line, u32 bgnum)
             tilesetaddr = ((bgcnt & 0x003C) << 12);
             tilemapaddr = ((bgcnt & 0x1F00) << 3);
 
-            pal = (u16*)&GPU.Palette[0x400];
+            pal = (u16*)&(Palette[LastOrderedLine])[0x400];
         }
         else
         {
             tilesetaddr = ((CurUnit->DispCnt & 0x07000000) >> 8) + ((bgcnt & 0x003C) << 12);
             tilemapaddr = ((CurUnit->DispCnt & 0x38000000) >> 11) + ((bgcnt & 0x1F00) << 3);
 
-            pal = (u16*)&GPU.Palette[0];
+            pal = (u16*)&(Palette[LastOrderedLine])[0];
         }
 
         u16 curtile;
@@ -1367,7 +1594,7 @@ void SoftRenderer::DrawBG_Extended(u32 line, u32 bgnum)
                 {
                     curtile = *(u16*)&bgvram[(tilemapaddr + (((((finalY & coordmask) >> 11) << yshift) + ((finalX & coordmask) >> 11)) << 1)) & bgvrammask];
 
-                    if (extpal) curpal = CurUnit->GetBGExtPal(bgnum, curtile>>12);
+                    if (extpal) curpal = CurUnit->GetBGExtPal(bgnum, curtile>>12, LastOrderedLine);
                     else        curpal = pal;
 
                     // draw pixel
@@ -1444,12 +1671,12 @@ void SoftRenderer::DrawBG_Large(u32 line) // BG is always BG2
 
     u8* bgvram;
     u32 bgvrammask;
-    CurUnit->GetBGVRAM(bgvram, bgvrammask);
+    CurUnit->GetBGVRAM(bgvram, bgvrammask, LastOrderedLine);
 
     // 256-color bitmap
 
-    if (CurUnit->Num) pal = (u16*)&GPU.Palette[0x400];
-    else     pal = (u16*)&GPU.Palette[0];
+    if (CurUnit->Num) pal = (u16*)&(Palette[LastOrderedLine])[0x400];
+    else     pal = (u16*)&(Palette[LastOrderedLine])[0];
 
     u8 color;
 
@@ -1522,11 +1749,11 @@ template <SoftRenderer::DrawPixel drawPixel>
 void SoftRenderer::InterleaveSprites(u32 prio)
 {
     u32* objLine = OBJLine[CurUnit->Num];
-    u16* pal = (u16*)&GPU.Palette[CurUnit->Num ? 0x600 : 0x200];
+    u16* pal = (u16*)&(Palette[LastOrderedLine])[CurUnit->Num ? 0x600 : 0x200];
 
     if (CurUnit->DispCnt & 0x80000000)
     {
-        u16* extpal = CurUnit->GetOBJExtPal();
+        u16* extpal = CurUnit->GetOBJExtPal(LastOrderedLine);
 
         for (u32 i = 0; i < 256; i++)
         {
@@ -1581,7 +1808,7 @@ void SoftRenderer::InterleaveSprites(u32 prio)
 void SoftRenderer::DrawSprites(u32 line, Unit* unit)
 {
     CurUnit = unit;
-
+    
     if (line == 0)
     {
         // reset those counters here
@@ -1594,23 +1821,12 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
         CurUnit->OBJMosaicYCount = 0;
     }
 
-    if (CurUnit->Num == 0)
-    {
-        auto objDirty = GPU.VRAMDirty_AOBJ.DeriveState(GPU.VRAMMap_AOBJ, GPU);
-        GPU.MakeVRAMFlat_AOBJCoherent(objDirty);
-    }
-    else
-    {
-        auto objDirty = GPU.VRAMDirty_BOBJ.DeriveState(GPU.VRAMMap_BOBJ, GPU);
-        GPU.MakeVRAMFlat_BOBJCoherent(objDirty);
-    }
-
     NumSprites[CurUnit->Num] = 0;
     memset(OBJLine[CurUnit->Num], 0, 256*4);
     memset(OBJWindow[CurUnit->Num], 0, 256);
     if (!(CurUnit->DispCnt & 0x1000)) return;
 
-    u16* oam = (u16*)&GPU.OAM[CurUnit->Num ? 0x400 : 0];
+    u16* oam = (u16*)&(OAM[LastOrderedLine])[CurUnit->Num ? 0x400 : 0];
 
     const s32 spritewidth[16] =
     {
@@ -1705,7 +1921,7 @@ void SoftRenderer::DrawSprites(u32 line, Unit* unit)
 template<bool window>
 void SoftRenderer::DrawSprite_Rotscale(u32 num, u32 boundwidth, u32 boundheight, u32 width, u32 height, s32 xpos, s32 ypos)
 {
-    u16* oam = (u16*)&GPU.OAM[CurUnit->Num ? 0x400 : 0];
+    u16* oam = (u16*)&(OAM[LastOrderedLine])[CurUnit->Num ? 0x400 : 0];
     u16* attrib = &oam[num * 4];
     u16* rotparams = &oam[(((attrib[1] >> 9) & 0x1F) * 16) + 3];
 
@@ -1717,7 +1933,7 @@ void SoftRenderer::DrawSprite_Rotscale(u32 num, u32 boundwidth, u32 boundheight,
 
     u8* objvram;
     u32 objvrammask;
-    CurUnit->GetOBJVRAM(objvram, objvrammask);
+    CurUnit->GetOBJVRAM(objvram, objvrammask, LastOrderedLine);
 
     u32* objLine = OBJLine[CurUnit->Num];
     u8* objWindow = OBJWindow[CurUnit->Num];
@@ -1917,7 +2133,7 @@ void SoftRenderer::DrawSprite_Rotscale(u32 num, u32 boundwidth, u32 boundheight,
 template<bool window>
 void SoftRenderer::DrawSprite_Normal(u32 num, u32 width, u32 height, s32 xpos, s32 ypos)
 {
-    u16* oam = (u16*)&GPU.OAM[CurUnit->Num ? 0x400 : 0];
+    u16* oam = (u16*)&(OAM[LastOrderedLine])[CurUnit->Num ? 0x400 : 0];
     u16* attrib = &oam[num * 4];
 
     u32 pixelattr = ((attrib[2] & 0x0C00) << 6) | 0xC0000;
@@ -1934,7 +2150,7 @@ void SoftRenderer::DrawSprite_Normal(u32 num, u32 width, u32 height, s32 xpos, s
 
     u8* objvram;
     u32 objvrammask;
-    CurUnit->GetOBJVRAM(objvram, objvrammask);
+    CurUnit->GetOBJVRAM(objvram, objvrammask, LastOrderedLine);
 
     u32* objLine = OBJLine[CurUnit->Num];
     u8* objWindow = OBJWindow[CurUnit->Num];
@@ -2162,6 +2378,119 @@ void SoftRenderer::DrawSprite_Normal(u32 num, u32 width, u32 height, s32 xpos, s
                 if (!(xoff & 0x7)) pixelsaddr += ((attrib[1] & 0x1000) ? -28 : 28);
             }
         }
+    }
+}
+
+void SoftRenderer::CleanupPointers(u8 prevpos)
+{
+    u8 nextpos = prevpos+1;
+
+    if (OAM[prevpos] != OAM[nextpos]) free(OAM[prevpos]);
+    if (Palette[prevpos] != Palette[nextpos]) free(Palette[prevpos]);
+    if (Units[0][prevpos] != Units[0][nextpos]) delete Units[0][prevpos];
+    if (Units[1][prevpos] != Units[1][nextpos]) delete Units[1][prevpos];
+    if (VramDispBank[prevpos] != VramDispBank[nextpos]) free(VramDispBank[prevpos]);
+    if (GPU.VRAMFlat_ABG[prevpos] != GPU.VRAMFlat_ABG[nextpos]) free(GPU.VRAMFlat_ABG[prevpos]);
+    if (GPU.VRAMFlat_BBG[prevpos] != GPU.VRAMFlat_BBG[nextpos]) free(GPU.VRAMFlat_BBG[prevpos]);
+    if (GPU.VRAMFlat_AOBJ[prevpos] != GPU.VRAMFlat_AOBJ[nextpos]) free(GPU.VRAMFlat_AOBJ[prevpos]);
+    if (GPU.VRAMFlat_BOBJ[prevpos] != GPU.VRAMFlat_BOBJ[nextpos]) free(GPU.VRAMFlat_BOBJ[prevpos]);
+    if (GPU.VRAMFlat_ABGExtPal[prevpos] != GPU.VRAMFlat_ABGExtPal[nextpos]) free(GPU.VRAMFlat_ABGExtPal[prevpos]);
+    if (GPU.VRAMFlat_BBGExtPal[prevpos] != GPU.VRAMFlat_BBGExtPal[nextpos]) free(GPU.VRAMFlat_BBGExtPal[prevpos]);
+    if (GPU.VRAMFlat_AOBJExtPal[prevpos] != GPU.VRAMFlat_AOBJExtPal[nextpos]) free(GPU.VRAMFlat_AOBJExtPal[prevpos]);
+    if (GPU.VRAMFlat_BOBJExtPal[prevpos] != GPU.VRAMFlat_BOBJExtPal[nextpos]) free(GPU.VRAMFlat_BOBJExtPal[prevpos]);
+    
+    OAM[prevpos] = nullptr;
+    Palette[prevpos] = nullptr;
+    Units[0][prevpos] = nullptr;
+    Units[1][prevpos] = nullptr;
+    VramDispBank[prevpos] = nullptr;
+    GPU.VRAMFlat_ABG[prevpos] = nullptr;
+    GPU.VRAMFlat_BBG[prevpos] = nullptr;
+    GPU.VRAMFlat_AOBJ[prevpos] = nullptr;
+    GPU.VRAMFlat_BOBJ[prevpos] = nullptr;
+    GPU.VRAMFlat_ABGExtPal[prevpos] = nullptr;
+    GPU.VRAMFlat_BBGExtPal[prevpos] = nullptr;
+    GPU.VRAMFlat_AOBJExtPal[prevpos] = nullptr;
+    GPU.VRAMFlat_BOBJExtPal[prevpos] = nullptr;
+}
+
+void SoftRenderer::RenderThreadFunc()
+{
+    while (true)
+    {
+        // wait for the next frame to begin / to be ordered to rerender a scanline
+        Semaphore_Wait(Sema_RenderStart);
+        // check if we should end thread execution
+        if (!RenderThreadRunning)
+            return;
+            
+        // init vars
+        int i = !Start0;
+        Platform::Mutex_Lock(Mutex_LinesAdvanced);
+        LinesAdvanced = 0;
+        Platform::Mutex_Unlock(Mutex_LinesAdvanced);
+        RenderThreadRendering = true;
+
+        // main loop
+        for (; i < 193; i++)
+        {
+
+            // check if we should rerender a scanline
+            if (LinesRerender.load(std::memory_order_relaxed))
+            {
+                for (int j = 0; j < 193; j++)
+                    if (Dirty[j].load(std::memory_order_relaxed))
+                    {
+                        //printf("runa!");
+                        Dirty[j] = false;
+                        CleanupPointers(LastOrderedLine);
+                        LastOrderedLine++;
+                        i = j;
+                        Platform::Mutex_Lock(Mutex_LinesAdvanced);
+                        LinesAdvanced = j;
+                        Platform::Mutex_Unlock(Mutex_LinesAdvanced);
+                        // mutex to avoid a possible race condition
+                        Platform::Mutex_Lock(Mutex_LinesRerender);
+                        LinesRerender--;
+                        Platform::Mutex_Unlock(Mutex_LinesRerender);
+                        break;
+                    }
+            }
+            else
+            {
+                // advance a scanline, locked behind a mutex because we dont want to advance if the main thread is about to update us on the next scanline
+                Platform::Mutex_Lock(Mutex_LinesAdvanced);
+                LinesAdvanced++;
+                Platform::Mutex_Unlock(Mutex_LinesAdvanced);
+
+                // check if the next scanline updates any buffers
+                if (Dirty[i].load(std::memory_order_relaxed))
+                {
+                    //printf("runb!");
+                    Dirty[i] = false;
+                    CleanupPointers(LastOrderedLine);
+                    LastOrderedLine++;
+                }
+            }
+            
+            // draw scanlines
+            if (i != 0)
+            {
+                DrawScanline(i-1, Units[0][LastOrderedLine]);
+                DrawScanline(i-1, Units[1][LastOrderedLine]);
+                VCount[LastOrderedLine]++;
+                if (VCount[LastOrderedLine] > 191) VCount[LastOrderedLine] = 0;
+            }
+            if (i != 192)
+            {
+                DrawSprites(i, Units[0][LastOrderedLine]);
+                DrawSprites(i, Units[1][LastOrderedLine]);
+            }
+        }
+        // tell the main thread we're no longer rendering
+        RenderThreadRendering = false;
+        Platform::Semaphore_Post(Sema_RenderFinish);
+        FrameCounter++;
     }
 }
 

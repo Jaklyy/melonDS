@@ -37,6 +37,7 @@ public:
     Unit(u32 num, melonDS::GPU& gpu);
     virtual ~Unit() = default;
     Unit(const Unit&) = delete;
+    Unit(const Unit&, melonDS::GPU& gpu);
     Unit& operator=(const Unit&) = delete;
 
     void Reset();
@@ -69,17 +70,18 @@ public:
 
     void CheckWindows(u32 line);
 
-    u16* GetBGExtPal(u32 slot, u32 pal);
-    u16* GetOBJExtPal();
+    u16* GetBGExtPal(u32 slot, u32 pal, u8 pos);
+    u16* GetOBJExtPal(u8 pos);
 
-    void GetBGVRAM(u8*& data, u32& mask) const;
-    void GetOBJVRAM(u8*& data, u32& mask) const;
+    void GetBGVRAM(u8*& data, u32& mask, u8 pos) const;
+    void GetOBJVRAM(u8*& data, u32& mask, u8 pos) const;
 
     void UpdateMosaicCounters(u32 line);
     void CalculateWindowMask(u32 line, u8* windowMask, const u8* objWindow);
 
     u32 Num;
     bool Enabled;
+    bool Dirty;
 
     u16 DispFIFO[16];
     u32 DispFIFOReadPtr;
@@ -131,6 +133,10 @@ class Renderer2D
 public:
     virtual ~Renderer2D() {}
 
+    virtual void Reset() = 0;
+    virtual void WaitDone() = 0;
+    
+    virtual void CheckUpdates(u32 line, bool bg, bool obj) = 0;
     virtual void DrawScanline(u32 line, Unit* unit) = 0;
     virtual void DrawSprites(u32 line, Unit* unit) = 0;
 

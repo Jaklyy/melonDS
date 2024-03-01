@@ -86,6 +86,27 @@ GPU::~GPU() noexcept
     NDS.UnregisterEventFunc(Event_LCD, LCD_StartScanline);
     NDS.UnregisterEventFunc(Event_LCD, LCD_FinishFrame);
     NDS.UnregisterEventFunc(Event_DisplayFIFO, 0);
+
+    // clean up malloc'd memory
+    for (int i = 0; i < 257; i++)
+    {
+        free(VRAMFlat_ABG[i]);
+        VRAMFlat_ABG[i] = nullptr;
+        free(VRAMFlat_BBG[i]);
+        VRAMFlat_BBG[i] = nullptr;
+        free(VRAMFlat_AOBJ[i]);
+        VRAMFlat_AOBJ[i] = nullptr;
+        free(VRAMFlat_BOBJ[i]);
+        VRAMFlat_BOBJ[i] = nullptr;
+        free(VRAMFlat_ABGExtPal[i]);
+        VRAMFlat_ABGExtPal[i] = nullptr;
+        free(VRAMFlat_BBGExtPal[i]);
+        VRAMFlat_BBGExtPal[i] = nullptr;
+        free(VRAMFlat_AOBJExtPal[i]);
+        VRAMFlat_AOBJExtPal[i] = nullptr;
+        free(VRAMFlat_BOBJExtPal[i]);
+        VRAMFlat_BOBJExtPal[i] = nullptr;
+    }
 }
 
 void GPU::ResetVRAMCache() noexcept
@@ -104,14 +125,25 @@ void GPU::ResetVRAMCache() noexcept
     VRAMDirty_Texture.Reset();
     VRAMDirty_TexPal.Reset();
 
-    memset(VRAMFlat_ABG, 0, sizeof(VRAMFlat_ABG));
-    memset(VRAMFlat_BBG, 0, sizeof(VRAMFlat_BBG));
-    memset(VRAMFlat_AOBJ, 0, sizeof(VRAMFlat_AOBJ));
-    memset(VRAMFlat_BOBJ, 0, sizeof(VRAMFlat_BOBJ));
-    memset(VRAMFlat_ABGExtPal, 0, sizeof(VRAMFlat_ABGExtPal));
-    memset(VRAMFlat_BBGExtPal, 0, sizeof(VRAMFlat_BBGExtPal));
-    memset(VRAMFlat_AOBJExtPal, 0, sizeof(VRAMFlat_AOBJExtPal));
-    memset(VRAMFlat_BOBJExtPal, 0, sizeof(VRAMFlat_BOBJExtPal));
+    for (int i = 0; i < 257; i++)
+    {
+        free(VRAMFlat_ABG[i]);
+        VRAMFlat_ABG[i] = nullptr;
+        free(VRAMFlat_BBG[i]);
+        VRAMFlat_BBG[i] = nullptr;
+        free(VRAMFlat_AOBJ[i]);
+        VRAMFlat_AOBJ[i] = nullptr;
+        free(VRAMFlat_BOBJ[i]);
+        VRAMFlat_BOBJ[i] = nullptr;
+        free(VRAMFlat_ABGExtPal[i]);
+        VRAMFlat_ABGExtPal[i] = nullptr;
+        free(VRAMFlat_BBGExtPal[i]);
+        VRAMFlat_BBGExtPal[i] = nullptr;
+        free(VRAMFlat_AOBJExtPal[i]);
+        VRAMFlat_AOBJExtPal[i] = nullptr;
+        free(VRAMFlat_BOBJExtPal[i]);
+        VRAMFlat_BOBJExtPal[i] = nullptr;
+    }
     memset(VRAMFlat_Texture, 0, sizeof(VRAMFlat_Texture));
     memset(VRAMFlat_TexPal, 0, sizeof(VRAMFlat_TexPal));
 }
@@ -186,6 +218,7 @@ void GPU::Reset() noexcept
     GPU2D_A.Reset();
     GPU2D_B.Reset();
     GPU3D.Reset();
+    GPU2D_Renderer->Reset();
 
     int backbuf = FrontBuffer ? 0 : 1;
     GPU2D_Renderer->SetFramebuffer(Framebuffer[backbuf][1].get(), Framebuffer[backbuf][0].get());
@@ -885,15 +918,11 @@ void GPU::StartHBlank(u32 line) noexcept
         // note: this should start 48 cycles after the scanline start
         if (line < 192)
         {
-            GPU2D_Renderer->DrawScanline(line, &GPU2D_A);
-            GPU2D_Renderer->DrawScanline(line, &GPU2D_B);
-        }
-
-        // sprites are pre-rendered one scanline in advance
-        if (line < 191)
-        {
-            GPU2D_Renderer->DrawSprites(line+1, &GPU2D_A);
-            GPU2D_Renderer->DrawSprites(line+1, &GPU2D_B);
+            // sprites are pre-rendered one scanline in advance
+            if (line == 191)
+                GPU2D_Renderer->CheckUpdates(line+1, true, false);
+            else
+                GPU2D_Renderer->CheckUpdates(line+1, true, true);
         }
 
         NDS.CheckDMAs(0, 0x02);
@@ -904,8 +933,7 @@ void GPU::StartHBlank(u32 line) noexcept
     }
     else if (VCount == 262)
     {
-        GPU2D_Renderer->DrawSprites(0, &GPU2D_A);
-        GPU2D_Renderer->DrawSprites(0, &GPU2D_B);
+        GPU2D_Renderer->CheckUpdates(0, false, true);
     }
 
     if (DispStat[0] & (1<<4)) NDS.SetIRQ(0, IRQ_HBlank);
@@ -954,7 +982,10 @@ void GPU::StartScanline(u32 line) noexcept
     if (line == 0)
         VCount = 0;
     else if (NextVCount != 0xFFFFFFFF)
+    {
         VCount = NextVCount;
+        VCountDirty = true;
+    }
     else
         VCount++;
 
@@ -1020,6 +1051,7 @@ void GPU::StartScanline(u32 line) noexcept
             //of the next frame.
             // So we can give the rasteriser a bit more headroom
             GPU3D.VCount144(*this);
+            GPU2D_Renderer->WaitDone();
 
             // VBlank
             DispStat[0] |= (1<<0);
@@ -1143,46 +1175,46 @@ template NonStupidBitField<512*1024/VRAMDirtyGranularity> VRAMTrackingSet<512*10
 
 bool GPU::MakeVRAMFlat_TextureCoherent(NonStupidBitField<512*1024/VRAMDirtyGranularity>& dirty) noexcept
 {
-    return CopyLinearVRAM<128*1024>(VRAMFlat_Texture, VRAMMap_Texture, dirty, &GPU::ReadVRAM_Texture<u64>);
+    return CopyLinearVRAM2<128*1024>(VRAMFlat_Texture, VRAMMap_Texture, dirty, &GPU::ReadVRAM_Texture<u64>);
 }
 bool GPU::MakeVRAMFlat_TexPalCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept
 {
-    return CopyLinearVRAM<16*1024>(VRAMFlat_TexPal, VRAMMap_TexPal, dirty, &GPU::ReadVRAM_TexPal<u64>);
+    return CopyLinearVRAM2<16*1024>(VRAMFlat_TexPal, VRAMMap_TexPal, dirty, &GPU::ReadVRAM_TexPal<u64>);
 }
 
-bool GPU::MakeVRAMFlat_ABGCoherent(NonStupidBitField<512*1024/VRAMDirtyGranularity>& dirty) noexcept
+u8* GPU::MakeVRAMFlat_ABGCoherent(NonStupidBitField<512*1024/VRAMDirtyGranularity>& dirty) noexcept
 {
-    return CopyLinearVRAM<16*1024>(VRAMFlat_ABG, VRAMMap_ABG, dirty, &GPU::ReadVRAM_ABG<u64>);
+    return CopyLinearVRAM<16*1024>(VRAMFlat_ABG[256], VRAMMap_ABG, dirty, &GPU::ReadVRAM_ABG<u64>);
 }
-bool GPU::MakeVRAMFlat_BBGCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept
+u8* GPU::MakeVRAMFlat_BBGCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept
 {
-    return CopyLinearVRAM<16*1024>(VRAMFlat_BBG, VRAMMap_BBG, dirty, &GPU::ReadVRAM_BBG<u64>);
-}
-
-bool GPU::MakeVRAMFlat_AOBJCoherent(NonStupidBitField<256*1024/VRAMDirtyGranularity>& dirty) noexcept
-{
-    return CopyLinearVRAM<16*1024>(VRAMFlat_AOBJ, VRAMMap_AOBJ, dirty, &GPU::ReadVRAM_AOBJ<u64>);
-}
-bool GPU::MakeVRAMFlat_BOBJCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept
-{
-    return CopyLinearVRAM<16*1024>(VRAMFlat_BOBJ, VRAMMap_BOBJ, dirty, &GPU::ReadVRAM_BOBJ<u64>);
+    return CopyLinearVRAM<16*1024>(VRAMFlat_BBG[256], VRAMMap_BBG, dirty, &GPU::ReadVRAM_BBG<u64>);
 }
 
-bool GPU::MakeVRAMFlat_ABGExtPalCoherent(NonStupidBitField<32*1024/VRAMDirtyGranularity>& dirty) noexcept
+u8* GPU::MakeVRAMFlat_AOBJCoherent(NonStupidBitField<256*1024/VRAMDirtyGranularity>& dirty) noexcept
 {
-    return CopyLinearVRAM<8*1024>(VRAMFlat_ABGExtPal, VRAMMap_ABGExtPal, dirty, &GPU::ReadVRAM_ABGExtPal<u64>);
+    return CopyLinearVRAM<16*1024>(VRAMFlat_AOBJ[256], VRAMMap_AOBJ, dirty, &GPU::ReadVRAM_AOBJ<u64>);
 }
-bool GPU::MakeVRAMFlat_BBGExtPalCoherent(NonStupidBitField<32*1024/VRAMDirtyGranularity>& dirty) noexcept
+u8* GPU::MakeVRAMFlat_BOBJCoherent(NonStupidBitField<128*1024/VRAMDirtyGranularity>& dirty) noexcept
 {
-    return CopyLinearVRAM<8*1024>(VRAMFlat_BBGExtPal, VRAMMap_BBGExtPal, dirty, &GPU::ReadVRAM_BBGExtPal<u64>);
+    return CopyLinearVRAM<16*1024>(VRAMFlat_BOBJ[256], VRAMMap_BOBJ, dirty, &GPU::ReadVRAM_BOBJ<u64>);
 }
 
-bool GPU::MakeVRAMFlat_AOBJExtPalCoherent(NonStupidBitField<8*1024/VRAMDirtyGranularity>& dirty) noexcept
+u8* GPU::MakeVRAMFlat_ABGExtPalCoherent(NonStupidBitField<32*1024/VRAMDirtyGranularity>& dirty) noexcept
 {
-    return CopyLinearVRAM<8*1024>(VRAMFlat_AOBJExtPal, &VRAMMap_AOBJExtPal, dirty, &GPU::ReadVRAM_AOBJExtPal<u64>);
+    return CopyLinearVRAM<8*1024>(VRAMFlat_ABGExtPal[256], VRAMMap_ABGExtPal, dirty, &GPU::ReadVRAM_ABGExtPal<u64>);
 }
-bool GPU::MakeVRAMFlat_BOBJExtPalCoherent(NonStupidBitField<8*1024/VRAMDirtyGranularity>& dirty) noexcept
+u8* GPU::MakeVRAMFlat_BBGExtPalCoherent(NonStupidBitField<32*1024/VRAMDirtyGranularity>& dirty) noexcept
 {
-    return CopyLinearVRAM<8*1024>(VRAMFlat_BOBJExtPal, &VRAMMap_BOBJExtPal, dirty, &GPU::ReadVRAM_BOBJExtPal<u64>);
+    return CopyLinearVRAM<8*1024>(VRAMFlat_BBGExtPal[256], VRAMMap_BBGExtPal, dirty, &GPU::ReadVRAM_BBGExtPal<u64>);
+}
+
+u8* GPU::MakeVRAMFlat_AOBJExtPalCoherent(NonStupidBitField<8*1024/VRAMDirtyGranularity>& dirty) noexcept
+{
+    return CopyLinearVRAM<8*1024>(VRAMFlat_AOBJExtPal[256], &VRAMMap_AOBJExtPal, dirty, &GPU::ReadVRAM_AOBJExtPal<u64>);
+}
+u8* GPU::MakeVRAMFlat_BOBJExtPalCoherent(NonStupidBitField<8*1024/VRAMDirtyGranularity>& dirty) noexcept
+{
+    return CopyLinearVRAM<8*1024>(VRAMFlat_BOBJExtPal[256], &VRAMMap_BOBJExtPal, dirty, &GPU::ReadVRAM_BOBJExtPal<u64>);
 }
 }
