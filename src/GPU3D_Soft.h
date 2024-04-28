@@ -328,11 +328,19 @@ private:
             return x;
         }
 
+        template <bool twice>
         constexpr s32 Step()
         {
-            dx += Increment;
-            y++;
-
+            if constexpr (twice)
+            {
+                dx += Increment << 1;
+                y += 2;
+            }
+            else
+            {
+                dx += Increment;
+                y++;
+            }
             s32 x = XVal();
             Interp.SetX(y);
             return x;

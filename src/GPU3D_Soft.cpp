@@ -822,11 +822,8 @@ void SoftRenderer::SetupPolygon(SoftRenderer::RendererPolygon* rp, Polygon* poly
 
 void SoftRenderer::Step(RendererPolygon* rp, int y)
 {
-    rp->XL = rp->SlopeL.Step();
-    rp->XR = rp->SlopeR.Step();
-    //CheckSlope(rp, y+1);
-    rp->XL = rp->SlopeL.Step();
-    rp->XR = rp->SlopeR.Step();
+    rp->XL = rp->SlopeL.Step<true>();
+    rp->XR = rp->SlopeR.Step<true>();
 }
 
 void SoftRenderer::CheckSlope(RendererPolygon* rp, s32 y)
@@ -1570,7 +1567,7 @@ void SoftRenderer::RenderScanline(const GPU& gpu, s32 y, int firstpoly, int npol
 
             if (accuracy && abort)
             {
-                CheckSlope(rp, y);
+                //CheckSlope(rp, y);
                 Step(rp, y);
             }
             else if (polygon->IsShadowMask)
@@ -1987,16 +1984,16 @@ void SoftRenderer::RenderPolygonsTiming(GPU& gpu, Polygon** polygons, int npolys
         Polygon* polygon = PolygonList[numberofpolygons].PolyData;
         if ((polygon->YTop & 1))
         {
-            CheckSlope(&PolygonList[numberofpolygons], polygon->YTop);
-            PolygonList[numberofpolygons].XL = PolygonList[numberofpolygons].SlopeL.Step();
-            PolygonList[numberofpolygons].XR = PolygonList[numberofpolygons].SlopeR.Step();
+            //CheckSlope(&PolygonList[numberofpolygons], polygon->YTop);
+            PolygonList[numberofpolygons].XL = PolygonList[numberofpolygons].SlopeL.Step<false>();
+            PolygonList[numberofpolygons].XR = PolygonList[numberofpolygons].SlopeR.Step<false>();
         }
         polygon = PolygonListSub[numberofpolygons].PolyData;
         if (!(polygon->YTop & 1))
         {
-            CheckSlope(&PolygonListSub[numberofpolygons], polygon->YTop);
-            PolygonListSub[numberofpolygons].XL = PolygonListSub[numberofpolygons].SlopeL.Step();
-            PolygonListSub[numberofpolygons].XR = PolygonListSub[numberofpolygons].SlopeR.Step();
+            //CheckSlope(&PolygonListSub[numberofpolygons], polygon->YTop);
+            PolygonListSub[numberofpolygons].XL = PolygonListSub[numberofpolygons].SlopeL.Step<false>();
+            PolygonListSub[numberofpolygons].XR = PolygonListSub[numberofpolygons].SlopeR.Step<false>();
         }
         numberofpolygons++;
     }
@@ -2099,7 +2096,6 @@ void SoftRenderer::RenderFrame(GPU& gpu)
     {
         // "Render thread, you're up! Get moving."
         Platform::Semaphore_Post(Sema_RenderStart);
-        Platform::Semaphore_Post(Sema_SubRenderStart);
     }
     else if (!FrameIdentical)
     {
