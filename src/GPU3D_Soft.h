@@ -537,6 +537,8 @@ private:
 
     // threading
 
+    volatile bool startsubthread = false;
+
     bool Threaded;
     Platform::Thread* RenderThread;
     Platform::Thread* SubRenderThread;

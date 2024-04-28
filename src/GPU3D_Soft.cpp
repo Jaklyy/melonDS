@@ -1962,9 +1962,9 @@ void SoftRenderer::RenderPolygonsFast(GPU& gpu, Polygon** polygons, int npolys)
     ScanlineTimeout = SLRead[y-1] - (PreReadCutoff+FinalPassLen);\
     \
     FindFirstPolyDoTimings(numberofpolygons, y, &firstpolyeven, &firstpolyodd, &rastertimingeven, &rastertimingodd);\
-    Semaphore_Post(Sema_SubScanlineStart);\
+    startsubthread = true;\
     RenderScanline<true, false>(gpu, y, firstpolyeven, numberofpolygons, &rastertimingeven);\
-    Semaphore_Wait(Sema_SubScanlineFin);\
+    while (startsubthread);\
     \
     prevtimespent = timespent;\
     RasterTiming += timespent = std::max(std::initializer_list<s32> {rastertimingeven, rastertimingodd, FinalPassLen});\
@@ -2011,9 +2011,9 @@ void SoftRenderer::RenderPolygonsTiming(GPU& gpu, Polygon** polygons, int npolys
 
     FindFirstPolyDoTimings(numberofpolygons, 0, &firstpolyeven, &firstpolyodd, &rastertimingeven, &rastertimingodd);
     // scanlines are rendered in pairs of two
-    Semaphore_Post(Sema_SubScanlineStart);
+    startsubthread = true;
     RenderScanline<true, false>(gpu, 0, firstpolyeven, numberofpolygons, &rastertimingeven);
-    Semaphore_Wait(Sema_SubScanlineFin);
+    while (startsubthread);
 
     // it can't proceed to the next scanline unless all others steps are done (both scanlines in the pair, and final pass)
     RasterTiming = timespent = std::max(std::initializer_list<s32> {rastertimingeven, rastertimingodd, FinalPassLen});
@@ -2180,9 +2180,9 @@ void SoftRenderer::RenderThreadFunc_Sub(GPU& gpu)
 
         for (int y = 1; y < 192; y+=2)
         {
-            Platform::Semaphore_Wait(Sema_SubScanlineStart);
+            while (!startsubthread);
             RenderScanline<true, true>(gpu, y, firstpolyodd, numberofpolygons, &rastertimingodd);
-            Platform::Semaphore_Post(Sema_SubScanlineFin);
+            startsubthread = false;
         }
     }
 }
