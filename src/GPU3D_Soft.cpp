@@ -43,6 +43,9 @@ void SoftRenderer::StopRenderThread()
         Platform::Thread_Wait(RenderThread);
         Platform::Thread_Free(RenderThread);
         RenderThread = nullptr;
+        Platform::Thread_Wait(SubRenderThread);
+        Platform::Thread_Free(SubRenderThread);
+        SubRenderThread = nullptr;
     }
 }
 
@@ -55,6 +58,9 @@ void SoftRenderer::SetupRenderThread(GPU& gpu)
             RenderThreadRunning = true; // "Time for work, render thread!"
             RenderThread = Platform::Thread_Create([this, &gpu]() {
                 RenderThreadFunc(gpu);
+            });
+            SubRenderThread = Platform::Thread_Create([this, &gpu]() {
+                RenderThreadFunc_Sub(gpu);
             });
         }
 
@@ -81,6 +87,10 @@ void SoftRenderer::SetupRenderThread(GPU& gpu)
         // "I might need some of your scanlines before you finish the whole buffer,"
         // "so let me know as soon as you're done with each one."
         Platform::Semaphore_Reset(Sema_ScanlineCount);
+        
+        Platform::Semaphore_Reset(Sema_SubScanlineFin);
+        Platform::Semaphore_Reset(Sema_SubScanlineStart);
+        Platform::Semaphore_Reset(Sema_SubRenderStart);
     }
     else
     {
@@ -97,15 +107,20 @@ void SoftRenderer::EnableRenderThread()
 }
 
 SoftRenderer::SoftRenderer(bool threaded) noexcept
-    : Renderer3D(false), Threaded(threaded)
+    : Renderer3D(false), Threaded(true)
 {
     Sema_RenderStart = Platform::Semaphore_Create();
     Sema_RenderDone = Platform::Semaphore_Create();
     Sema_ScanlineCount = Platform::Semaphore_Create();
+    
+    Sema_SubRenderStart = Platform::Semaphore_Create();
+    Sema_SubScanlineStart = Platform::Semaphore_Create();
+    Sema_SubScanlineFin = Platform::Semaphore_Create();
 
     RenderThreadRunning = false;
     RenderThreadRendering = false;
     RenderThread = nullptr;
+    SubRenderThread = nullptr;
 }
 
 SoftRenderer::~SoftRenderer()
@@ -115,6 +130,10 @@ SoftRenderer::~SoftRenderer()
     Platform::Semaphore_Free(Sema_RenderStart);
     Platform::Semaphore_Free(Sema_RenderDone);
     Platform::Semaphore_Free(Sema_ScanlineCount);
+
+    Platform::Semaphore_Free(Sema_SubRenderStart);
+    Platform::Semaphore_Free(Sema_SubScanlineStart);
+    Platform::Semaphore_Free(Sema_SubScanlineFin);
 }
 
 void SoftRenderer::Reset(GPU& gpu)
@@ -801,8 +820,11 @@ void SoftRenderer::SetupPolygon(SoftRenderer::RendererPolygon* rp, Polygon* poly
     }
 }
 
-void SoftRenderer::Step(RendererPolygon* rp)
+void SoftRenderer::Step(RendererPolygon* rp, int y)
 {
+    rp->XL = rp->SlopeL.Step();
+    rp->XR = rp->SlopeR.Step();
+    //CheckSlope(rp, y+1);
     rp->XL = rp->SlopeL.Step();
     rp->XR = rp->SlopeR.Step();
 }
@@ -1060,7 +1082,7 @@ bool SoftRenderer::RenderShadowMaskScanline(const GPU3D& gpu3d, RendererPolygon*
         }
     }
 
-    Step(rp);
+    Step(rp, y);
     return abortscanline;
 }
 
@@ -1083,7 +1105,7 @@ bool SoftRenderer::RenderPolygonScanline(const GPU& gpu, RendererPolygon* rp, s3
         fnDepthTest = DepthTest_LessThan;
 
     PrevIsShadowMask = false;
-
+    
     CheckSlope(rp, y);
     
     Vertex *vlcur, *vlnext, *vrcur, *vrnext;
@@ -1524,17 +1546,17 @@ bool SoftRenderer::RenderPolygonScanline(const GPU& gpu, RendererPolygon* rp, s3
                 PlotTranslucentPixel(gpu.GPU3D, pixeladdr+BufferSize, color, z, polyattr, polygon->IsShadow);
         }
     }
-    Step(rp);
+    Step(rp, y);
     return abortscanline;
 }
 
-template <bool accuracy>
+template <bool accuracy, bool odd>
 void SoftRenderer::RenderScanline(const GPU& gpu, s32 y, int firstpoly, int npolys, s32* timingcounter)
 {
     bool abort = false;
     for (; firstpoly < npolys; firstpoly++)
     {
-        RendererPolygon* rp = &PolygonList[firstpoly];
+        RendererPolygon* rp = (odd ? &PolygonListSub[firstpoly] : &PolygonList[firstpoly]);
         Polygon* polygon = rp->PolyData;
 
         if (accuracy && y == polygon->YBottom && y != polygon->YTop)
@@ -1549,7 +1571,7 @@ void SoftRenderer::RenderScanline(const GPU& gpu, s32 y, int firstpoly, int npol
             if (accuracy && abort)
             {
                 CheckSlope(rp, y);
-                Step(rp);
+                Step(rp, y);
             }
             else if (polygon->IsShadowMask)
                 abort = RenderShadowMaskScanline<accuracy>(gpu.GPU3D, rp, y, timingcounter);
@@ -1901,11 +1923,11 @@ void SoftRenderer::RenderPolygonsFast(GPU& gpu, Polygon** polygons, int npolys)
         SetupPolygon(&PolygonList[j++], polygons[i]);
     }
 
-    RenderScanline<false>(gpu, 0, 0, j, nullptr);
+    //RenderScanline<false>(gpu, 0, 0, j, nullptr);
 
     for (s32 y = 1; y < 192; y++)
     {
-        RenderScanline<false>(gpu, y, 0, j, nullptr);
+        //RenderScanline<false>(gpu, y, 0, j, nullptr);
         ScanlineFinalPass<false>(gpu.GPU3D, y-1, true, true);
         Platform::Semaphore_Post(Sema_ScanlineCount);
     }
@@ -1942,9 +1964,10 @@ void SoftRenderer::RenderPolygonsFast(GPU& gpu, Polygon** polygons, int npolys)
     /* update sl timeout */\
     ScanlineTimeout = SLRead[y-1] - (PreReadCutoff+FinalPassLen);\
     \
-    FindFirstPolyDoTimings(j, y, &firstpolyeven, &firstpolyodd, &rastertimingeven, &rastertimingodd);\
-    RenderScanline<true>(gpu, y, firstpolyeven, j, &rastertimingeven);\
-    RenderScanline<true>(gpu, y+1, firstpolyodd, j, &rastertimingodd);\
+    FindFirstPolyDoTimings(numberofpolygons, y, &firstpolyeven, &firstpolyodd, &rastertimingeven, &rastertimingodd);\
+    Semaphore_Post(Sema_SubScanlineStart);\
+    RenderScanline<true, false>(gpu, y, firstpolyeven, numberofpolygons, &rastertimingeven);\
+    Semaphore_Wait(Sema_SubScanlineFin);\
     \
     prevtimespent = timespent;\
     RasterTiming += timespent = std::max(std::initializer_list<s32> {rastertimingeven, rastertimingodd, FinalPassLen});\
@@ -1955,11 +1978,27 @@ void SoftRenderer::RenderPolygonsFast(GPU& gpu, Polygon** polygons, int npolys)
 
 void SoftRenderer::RenderPolygonsTiming(GPU& gpu, Polygon** polygons, int npolys)
 {
-    int j = 0;
+    numberofpolygons = 0;
     for (int i = 0; i < npolys; i++)
     {
         if (polygons[i]->Degenerate) continue;
-        SetupPolygon(&PolygonList[j++], polygons[i]);
+        SetupPolygon(&PolygonList[numberofpolygons], polygons[i]);
+        SetupPolygon(&PolygonListSub[numberofpolygons], polygons[i]);
+        Polygon* polygon = PolygonList[numberofpolygons].PolyData;
+        if ((polygon->YTop & 1))
+        {
+            CheckSlope(&PolygonList[numberofpolygons], polygon->YTop);
+            PolygonList[numberofpolygons].XL = PolygonList[numberofpolygons].SlopeL.Step();
+            PolygonList[numberofpolygons].XR = PolygonList[numberofpolygons].SlopeR.Step();
+        }
+        polygon = PolygonListSub[numberofpolygons].PolyData;
+        if (!(polygon->YTop & 1))
+        {
+            CheckSlope(&PolygonListSub[numberofpolygons], polygon->YTop);
+            PolygonListSub[numberofpolygons].XL = PolygonListSub[numberofpolygons].SlopeL.Step();
+            PolygonListSub[numberofpolygons].XR = PolygonListSub[numberofpolygons].SlopeR.Step();
+        }
+        numberofpolygons++;
     }
 
     // reset scanline trackers
@@ -1967,16 +2006,17 @@ void SoftRenderer::RenderPolygonsTiming(GPU& gpu, Polygon** polygons, int npolys
     gpu.GPU3D.RDLinesTemp = 63;
     RasterTiming = 0;
     ScanlineTimeout = SLRead[2] - (PreReadCutoff+FinalPassLen+4); // TEMP: should be infinity, but i dont want it to break due to not being set up to handle this properly. //0x7FFFFFFF; // CHECKME: first scanline pair timeout.
-    s32 rastertimingeven, rastertimingodd; // always init to 0 at the start of a scanline render
+    s32 rastertimingeven; // always init to 0 at the start of a scanline render
     s32 scanlineswaiting = 0, slwaitingrd = 0;
     s32 nextread = 0, nextreadrd = 0;
     u32 timespent, prevtimespent;
-    int firstpolyeven, firstpolyodd;
+    int firstpolyeven;
 
-    FindFirstPolyDoTimings(j, 0, &firstpolyeven, &firstpolyodd, &rastertimingeven, &rastertimingodd);
+    FindFirstPolyDoTimings(numberofpolygons, 0, &firstpolyeven, &firstpolyodd, &rastertimingeven, &rastertimingodd);
     // scanlines are rendered in pairs of two
-    RenderScanline<true>(gpu, 0, firstpolyeven, j, &rastertimingeven);
-    RenderScanline<true>(gpu, 1, firstpolyodd, j, &rastertimingodd);
+    Semaphore_Post(Sema_SubScanlineStart);
+    RenderScanline<true, false>(gpu, 0, firstpolyeven, numberofpolygons, &rastertimingeven);
+    Semaphore_Wait(Sema_SubScanlineFin);
 
     // it can't proceed to the next scanline unless all others steps are done (both scanlines in the pair, and final pass)
     RasterTiming = timespent = std::max(std::initializer_list<s32> {rastertimingeven, rastertimingodd, FinalPassLen});
@@ -2059,6 +2099,7 @@ void SoftRenderer::RenderFrame(GPU& gpu)
     {
         // "Render thread, you're up! Get moving."
         Platform::Semaphore_Post(Sema_RenderStart);
+        Platform::Semaphore_Post(Sema_SubRenderStart);
     }
     else if (!FrameIdentical)
     {
@@ -2089,7 +2130,11 @@ void SoftRenderer::RenderThreadFunc(GPU& gpu)
     {
         // Wait for a notice from the main thread to start rendering (or to stop entirely).
         Platform::Semaphore_Wait(Sema_RenderStart);
-        if (!RenderThreadRunning) return;
+        if (!RenderThreadRunning)
+        {
+            Platform::Semaphore_Post(Sema_SubRenderStart);
+            return;
+        }
 
         // Protect the GPU state from the main thread.
         // Some melonDS frontends (though not ours)
@@ -2109,6 +2154,7 @@ void SoftRenderer::RenderThreadFunc(GPU& gpu)
 
             if (gpu.GPU3D.RenderingEnabled >= 3)
             {
+                Platform::Semaphore_Post(Sema_SubRenderStart);
                 if (Accuracy)
                     RenderPolygonsTiming(gpu, &gpu.GPU3D.RenderPolygonRAM[0], gpu.GPU3D.RenderNumPolygons);
                 else
@@ -2128,6 +2174,23 @@ void SoftRenderer::RenderThreadFunc(GPU& gpu)
         RenderThreadRendering = false;
     }
 }
+
+void SoftRenderer::RenderThreadFunc_Sub(GPU& gpu)
+{
+    for(;;)
+    {
+        Platform::Semaphore_Wait(Sema_SubRenderStart);
+        if (!RenderThreadRunning) return;
+
+        for (int y = 1; y < 192; y+=2)
+        {
+            Platform::Semaphore_Wait(Sema_SubScanlineStart);
+            RenderScanline<true, true>(gpu, y, firstpolyodd, numberofpolygons, &rastertimingodd);
+            Platform::Semaphore_Post(Sema_SubScanlineFin);
+        }
+    }
+}
+
 void SoftRenderer::ScanlineSync(int line)
 {
     // only used in accurate mode (timings must be emulated)

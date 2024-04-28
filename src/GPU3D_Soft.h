@@ -456,6 +456,7 @@ private:
     };
 
     RendererPolygon PolygonList[2048];
+    RendererPolygon PolygonListSub[2048];
     bool DoTimings(s32 cycles, s32* timingcounter);
     bool CheckTimings(s32 cycles, s32* timingcounter);
     u32 DoTimingsPixels(s32 pixels, s32* timingcounter);
@@ -466,11 +467,11 @@ private:
     void SetupPolygonLeftEdge(RendererPolygon* rp, s32 y) const;
     void SetupPolygonRightEdge(RendererPolygon* rp, s32 y) const;
     void SetupPolygon(RendererPolygon* rp, Polygon* polygon) const;
-    void Step(RendererPolygon* rp);
+    void Step(RendererPolygon* rp, int y);
     void CheckSlope(RendererPolygon* rp, s32 y);
     template <bool accuracy> bool RenderShadowMaskScanline(const GPU3D& gpu3d, RendererPolygon* rp, s32 y, s32* timingcounter);
     template <bool accuracy> bool RenderPolygonScanline(const GPU& gpu, RendererPolygon* rp, s32 y, s32* timingcounter);
-    template <bool accuracy> void RenderScanline(const GPU& gpu, s32 y, int firstpoly, int npolys, s32* timingcounter);
+    template <bool accuracy, bool odd> void RenderScanline(const GPU& gpu, s32 y, int firstpoly, int npolys, s32* timingcounter);
     u32 CalculateFogDensity(const GPU3D& gpu3d, u32 pixeladdr) const;
     bool CheckEdgeMarkingPixel(u32 polyid, u32 z, u32 pixeladdr);
     bool CheckEdgeMarkingClearPlane(const GPU3D& gpu3d, u32 polyid, u32 z);
@@ -480,11 +481,14 @@ private:
     void RenderPolygonsTiming(GPU& gpu, Polygon** polygons, int npolys);
 
     void RenderThreadFunc(GPU& gpu);
+    void RenderThreadFunc_Sub(GPU& gpu);
     
     // counters for scanline rasterization timings
     s32 ScanlineTimeout;
     s32 RasterTiming;
-
+    int firstpolyodd;
+    s32 rastertimingodd;
+    int numberofpolygons;
     // buffer dimensions are 258x194 to add a offscreen 1px border
     // which simplifies edge marking tests
     // buffer is duplicated to keep track of the two topmost pixels
@@ -527,6 +531,7 @@ private:
 
     bool Threaded;
     Platform::Thread* RenderThread;
+    Platform::Thread* SubRenderThread;
     std::atomic_bool RenderThreadRunning;
     std::atomic_bool RenderThreadRendering;
 
@@ -539,5 +544,12 @@ private:
     // Used to allow the main thread to read some scanlines
     // before (the 3D portion of) the entire frame is rasterized.
     Platform::Semaphore* Sema_ScanlineCount;
+
+    // Used by the main render thread to tell the sub thread to start rendering a new scanline
+    Platform::Semaphore* Sema_SubRenderStart;
+
+    Platform::Semaphore* Sema_SubScanlineStart;
+
+    Platform::Semaphore* Sema_SubScanlineFin;
 };
 }
