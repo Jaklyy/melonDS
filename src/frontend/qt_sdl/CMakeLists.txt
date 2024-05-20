@@ -40,6 +40,7 @@ set(SOURCES_QT_SDL
     SaveManager.cpp
     CameraManager.cpp
     AudioInOut.cpp
+    jaklylog.cpp
 
     ArchiveUtil.h
     ArchiveUtil.cpp

@@ -28,6 +28,7 @@
 #include "Platform.h"
 #include "GPU.h"
 #include "ARMJIT_Memory.h"
+#include "frontend/qt_sdl/jaklylog.h"
 
 namespace melonDS
 {
@@ -1298,16 +1299,22 @@ u32 ARMv5::BusRead32(u32 addr)
 
 void ARMv5::BusWrite8(u32 addr, u8 val)
 {
+    fprintf(jaklylog, "A91 %X %X\n", addr, val);
+
     NDS.ARM9Write8(addr, val);
 }
 
 void ARMv5::BusWrite16(u32 addr, u16 val)
 {
+    fprintf(jaklylog, "A92 %X %X\n", addr, val);
+
     NDS.ARM9Write16(addr, val);
 }
 
 void ARMv5::BusWrite32(u32 addr, u32 val)
 {
+    fprintf(jaklylog, "A93 %X %X\n", addr, val);
+
     NDS.ARM9Write32(addr, val);
 }
 
@@ -1328,16 +1335,22 @@ u32 ARMv4::BusRead32(u32 addr)
 
 void ARMv4::BusWrite8(u32 addr, u8 val)
 {
+    fprintf(jaklylog, "A71 %X %X\n", addr, val);
+
     NDS.ARM7Write8(addr, val);
 }
 
 void ARMv4::BusWrite16(u32 addr, u16 val)
 {
+    fprintf(jaklylog, "A72 %X %X\n", addr, val);
+
     NDS.ARM7Write16(addr, val);
 }
 
 void ARMv4::BusWrite32(u32 addr, u32 val)
 {
+    fprintf(jaklylog, "A73 %X %X\n", addr, val);
+
     NDS.ARM7Write32(addr, val);
 }
 }

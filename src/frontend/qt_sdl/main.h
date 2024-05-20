@@ -34,6 +34,7 @@
 #include "Window.h"
 #include "EmuThread.h"
 #include "FrontendUtil.h"
+#include "jaklylog.h"
 
 class MelonApplication : public QApplication
 {

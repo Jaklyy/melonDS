@@ -406,8 +406,12 @@ int main(int argc, char** argv)
     if (memberSyntaxUsed) printf("Warning: use the a.zip|b.nds format at your own risk!\n");
 
     mainWindow->preloadROMs(dsfile, gbafile, options->boot);
+    
+    jaklylog = fopen("JAKLYLOG.log", "a");
 
     int ret = melon.exec();
+
+    fclose(jaklylog);
 
     delete options;
 
