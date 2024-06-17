@@ -1317,31 +1317,49 @@ u64& ARMv4::Timestamp()
 
 u8 ARMv5::BusRead8(u32 addr)
 {
+    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
+    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
+
     return NDS.ARM9Read8(addr);
 }
 
 u16 ARMv5::BusRead16(u32 addr)
 {
+    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
+    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
+
     return NDS.ARM9Read16(addr);
 }
 
 u32 ARMv5::BusRead32(u32 addr)
 {
+    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
+    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
+
     return NDS.ARM9Read32(addr);
 }
 
 void ARMv5::BusWrite8(u32 addr, u8 val)
 {
+    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
+    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
+
     NDS.ARM9Write8(addr, val);
 }
 
 void ARMv5::BusWrite16(u32 addr, u16 val)
 {
+    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
+    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
+
     NDS.ARM9Write16(addr, val);
 }
 
 void ARMv5::BusWrite32(u32 addr, u32 val)
 {
+    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
+    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
+
     NDS.ARM9Write32(addr, val);
 }
 
