@@ -1622,7 +1622,7 @@ bool ARMv5::DataRead8(u32 addr, u32* val)
                 if (IsAddressDCachable(addr))
                 {
                     *val = (DCacheLookup(addr) >> (8 * (addr & 3))) & 0xff;
-                    return;
+                    return true;
                 }
             }
         }
@@ -1667,7 +1667,7 @@ bool ARMv5::DataRead16(u32 addr, u32* val)
                 if (IsAddressDCachable(addr))
                 {
                     *val = (DCacheLookup(addr) >> (8* (addr & 2))) & 0xffff;
-                    return;
+                    return true;
                 }
             }
         }
@@ -1712,7 +1712,7 @@ bool ARMv5::DataRead32(u32 addr, u32* val)
                 if (IsAddressDCachable(addr))
                 {
                     *val = DCacheLookup(addr);
-                    return;
+                    return true;
                 }
             }
         }
@@ -1799,7 +1799,7 @@ bool ARMv5::DataWrite8(u32 addr, u8 val)
                 if (IsAddressDCachable(addr))
                 {
                     if (DCacheWrite8(addr, val))
-                        return;
+                        return true;
                 }
             }
         }
@@ -1844,7 +1844,7 @@ bool ARMv5::DataWrite16(u32 addr, u16 val)
                 if (IsAddressDCachable(addr))
                 {
                     if (DCacheWrite16(addr, val))
-                        return;
+                        return true;
                 }
             }
         }
@@ -1889,7 +1889,7 @@ bool ARMv5::DataWrite32(u32 addr, u32 val)
                 if (IsAddressDCachable(addr))
                 {
                     if (DCacheWrite32(addr, val))
-                        return;
+                        return true;
                 }
             }
         }
