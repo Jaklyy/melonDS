@@ -190,6 +190,8 @@ void ARM::Reset()
     BreakReq = false;
 #endif
 
+    memset(InterlockTimestamp, 0, sizeof(InterlockTimestamp));
+
     // zorp
     JumpTo(ExceptionBase);
 }
@@ -352,6 +354,27 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
     NDS.MonitorARM9Jump(addr);
 }
 
+void ARMv5::JumpTo8_16Bit(const u32 addr)
+{
+    // 8 and 16 loads (signed included) to pc
+    if (!(CP15Control & 0x1))
+    {
+        // if the pu is disabled it behaves like a normal jump
+        JumpTo((CP15Control & (1<<15)) ? (addr & ~0x1) : addr);
+    }
+    else
+    {
+        if (addr & 0x3)
+        {
+            // if the pu is enabled it will always prefetch abort if not word aligned
+            // although it will still attempt (and fail) to enter thumb mode if enabled
+            if ((addr & 0x1) && !(CP15Control & (1<<15))) CPSR |= 0x20;
+            PrefetchAbort();
+        }
+        else JumpTo(addr);
+    }
+}
+
 void ARMv4::JumpTo(u32 addr, bool restorecpsr)
 {
     if (restorecpsr)
@@ -394,6 +417,11 @@ void ARMv4::JumpTo(u32 addr, bool restorecpsr)
 
         CPSR &= ~0x20;
     }
+}
+
+void ARMv4::JumpTo8_16Bit(const u32 addr)
+{
+    JumpTo(addr & ~1); // checkme?
 }
 
 void ARM::RestoreCPSR()
@@ -1152,58 +1180,66 @@ u32 ARMv5::ReadMem(u32 addr, int size)
 }
 #endif
 
-void ARMv4::DataRead8(const u32 addr, u32* val)
+bool ARMv4::DataRead8(u32 addr, u32* val)
 {
     *val = BusRead8(addr);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
+    return true;
 }
 
-void ARMv4::DataRead16(const u32 addr, u32* val)
+bool ARMv4::DataRead16(u32 addr, u32* val)
 {
     *val = BusRead16(addr & ~1);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
+    return true;
 }
 
-void ARMv4::DataRead32(const u32 addr, u32* val)
+bool ARMv4::DataRead32(u32 addr, u32* val)
 {
     *val = BusRead32(addr & ~3);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][2];
+    return true;
 }
 
-void ARMv4::DataRead32S(const u32 addr, u32* val)
+bool ARMv4::DataRead32S(u32 addr, u32* val)
 {
     *val = BusRead32(addr & ~3);
     DataCycles += NDS.ARM7MemTimings[addr >> 15][3];
+    return true;
 }
 
-void ARMv4::DataWrite8(const u32 addr, const u8 val)
+bool ARMv4::DataWrite8(u32 addr, u8 val)
 {
     BusWrite8(addr, val);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
+    return true;
 }
 
-void ARMv4::DataWrite16(const u32 addr, const u16 val)
+bool ARMv4::DataWrite16(u32 addr, u16 val)
 {
     BusWrite16(addr & ~1, val);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][0];
+    return true;
 }
 
-void ARMv4::DataWrite32(const u32 addr, const u32 val)
+bool ARMv4::DataWrite32(u32 addr, u32 val)
 {
     BusWrite32(addr & ~3, val);
     DataRegion = addr;
     DataCycles = NDS.ARM7MemTimings[addr >> 15][2];
+    return true;
 }
 
-void ARMv4::DataWrite32S(const u32 addr, const u32 val)
+bool ARMv4::DataWrite32S(u32 addr, u32 val, bool dataabort)
 {
     BusWrite32(addr & ~3, val);
     DataCycles += NDS.ARM7MemTimings[addr >> 15][3];
+    return true;
 }
 
 
@@ -1267,6 +1303,16 @@ void ARMv4::AddCycles_CD()
     {
         Cycles += numC + numD;
     }
+}
+
+u64& ARMv5::Timestamp()
+{
+    return NDS.ARM9Timestamp;
+}
+
+u64& ARMv4::Timestamp()
+{
+    return NDS.ARM7Timestamp;
 }
 
 u8 ARMv5::BusRead8(u32 addr)
