@@ -29,7 +29,7 @@ using namespace melonDS;
 
 int EmuInstance::audioGetNumSamplesOut(int outlen)
 {
-    float f_len_in = (outlen * 32823.6328125) / (float)audioFreq;
+    float f_len_in = (outlen * (double)32728.498046875) / (float)audioFreq;
     f_len_in += audioSampleFrac;
     int len_in = (int)floor(f_len_in);
     audioSampleFrac = f_len_in - len_in;
