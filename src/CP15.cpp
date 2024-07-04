@@ -380,18 +380,20 @@ u32 ARMv5::ICacheLookup(const u32 addr)
         if ((ICacheTags[id+set] & ~(CACHE_FLAG_DIRTY_MASK | CACHE_FLAG_SET_MASK)) == (tag | CACHE_FLAG_VALID))
         {
             CodeCycles = 1;
+            CodeRegion = Mem9_ICache;
             u32 *cacheLine = (u32 *)&ICache[(id+set) << ICACHE_LINELENGTH_LOG2];
             if (CP15BISTTestStateRegister & CP15_BIST_TR_DISABLE_ICACHE_STREAMING) [[unlikely]]
             {
                 // Disabled ICACHE Streaming:
                 // retreive the data from memory, even if the data was cached
                 // See arm946e-s Rev 1 technical manual, 2.3.15 "Register 15, test State Register")
-                CodeCycles = NDS.ARM9MemTimings[tag >> 14][2]; 
+                CodeCycles = NDS.ARM9MemTimings[tag >> 14][2];
                 if (CodeMem.Mem)
                 {
                     return *(u32*)&CodeMem.Mem[(addr & CodeMem.Mask) & ~3];
                 } else
                 {
+                    CodeRegion = NDS.ARM9Regions[addr >> 14];
                     return NDS.ARM9Read32(addr & ~3);
                 }     
             }
@@ -405,7 +407,8 @@ u32 ARMv5::ICacheLookup(const u32 addr)
     // BIST test State register (See arm946e-s Rev 1 technical manual, 2.3.15 "Register 15, test State Register")
     if (CP15BISTTestStateRegister & CP15_BIST_TR_DISABLE_ICACHE_LINEFILL) [[unlikely]]
     {
-        CodeCycles = NDS.ARM9MemTimings[tag >> 14][2]; 
+        CodeCycles = NDS.ARM9MemTimings[tag >> 14][2];
+        CodeRegion = NDS.ARM9Regions[addr >> 14]; 
         if (CodeMem.Mem)
         {
             return *(u32*)&CodeMem.Mem[(addr & CodeMem.Mask) & ~3];
@@ -461,6 +464,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
     //printf("cache miss %08X: %d/%d\n", addr, NDS::ARM9MemTimings[addr >> 14][2], NDS::ARM9MemTimings[addr >> 14][3]);
     //                      first N32                                  remaining S32
     CodeCycles = (NDS.ARM9MemTimings[tag >> 14][2] + (NDS.ARM9MemTimings[tag >> 14][3] * ((DCACHE_LINELENGTH / 4) - 1))) << NDS.ARM9ClockShift;
+    CodeRegion = NDS.ARM9Regions[tag >> 14];
     return ptr[(addr & (ICACHE_LINELENGTH-1)) >> 2];
 }
 
@@ -514,6 +518,7 @@ u32 ARMv5::DCacheLookup(const u32 addr)
         if ((DCacheTags[id+set] & ~(CACHE_FLAG_DIRTY_MASK | CACHE_FLAG_SET_MASK)) == (tag | CACHE_FLAG_VALID))
         {
             DataCycles = 1;
+            DataRegion = Mem9_DCache;
             u32 *cacheLine = (u32 *)&DCache[(id+set) << DCACHE_LINELENGTH_LOG2];
             if (CP15BISTTestStateRegister & CP15_BIST_TR_DISABLE_DCACHE_STREAMING) [[unlikely]]
             {
@@ -523,13 +528,16 @@ u32 ARMv5::DCacheLookup(const u32 addr)
                 DataCycles = NDS.ARM9MemTimings[tag >> 14][2]; 
                 if (addr < ITCMSize)
                 {
+                    DataRegion = Mem9_ITCM;
                     return *(u32*)&ITCM[addr & (ITCMPhysicalSize - 3)];
                 } else
                 if ((addr & DTCMMask) == DTCMBase)
                 {
+                    DataRegion = Mem9_DTCM;
                     return *(u32*)&DTCM[addr & (DTCMPhysicalSize - 3)];
                 } else
                 {
+                    DataRegion = NDS.ARM9Regions[addr >> 14];
                     return BusRead32(addr & ~3);
                 }     
             }
@@ -547,13 +555,16 @@ u32 ARMv5::DCacheLookup(const u32 addr)
         DataCycles = NDS.ARM9MemTimings[tag >> 14][2]; 
         if (addr < ITCMSize)
         {
+            DataRegion = Mem9_ITCM;
             return *(u32*)&ITCM[addr & (ITCMPhysicalSize - 3)];
         } else
         if ((addr & DTCMMask) == DTCMBase)
         {
+            DataRegion = Mem9_DTCM;
             return *(u32*)&DTCM[addr & (DTCMPhysicalSize - 3)];
         } else
         {
+            DataRegion = NDS.ARM9Regions[addr >> 14];
             return BusRead32(addr & ~3);
         }        
     }
@@ -633,6 +644,7 @@ bool ARMv5::DCacheWrite32(const u32 addr, const u32 val)
             u32 *cacheLine = (u32 *)&DCache[(id+set) << DCACHE_LINELENGTH_LOG2];
             cacheLine[(addr & (DCACHE_LINELENGTH-1)) >> 2] = val;
             DataCycles = 1;
+            DataRegion = Mem9_DCache;
             #if !DISABLE_CACHEWRITEBACK
                 if (PU_Map[addr >> CP15_MAP_ENTRYSIZE_LOG2] & CP15_MAP_DCACHEWRITEBACK)
                 {
@@ -667,6 +679,7 @@ bool ARMv5::DCacheWrite16(const u32 addr, const u16 val)
             u16 *cacheLine = (u16 *)&DCache[(id+set) << DCACHE_LINELENGTH_LOG2];
             cacheLine[(addr & (DCACHE_LINELENGTH-1)) >> 1] = val;
             DataCycles = 1;
+            DataRegion = Mem9_DCache;
             #if !DISABLE_CACHEWRITEBACK
                 if (PU_Map[addr >> CP15_MAP_ENTRYSIZE_LOG2] & CP15_MAP_DCACHEWRITEBACK)
                 {
@@ -702,6 +715,7 @@ bool ARMv5::DCacheWrite8(const u32 addr, const u8 val)
             u8 *cacheLine = &DCache[(id+set) << DCACHE_LINELENGTH_LOG2];
             cacheLine[addr & (DCACHE_LINELENGTH-1)] = val;
             DataCycles = 1;
+            DataRegion = Mem9_DCache;
             #if !DISABLE_CACHEWRITEBACK
                 if (PU_Map[addr >> CP15_MAP_ENTRYSIZE_LOG2] & CP15_MAP_DCACHEWRITEBACK)
                 {
@@ -1563,7 +1577,6 @@ u32 ARMv5::CP15Read(const u32 id) const
 
 u32 ARMv5::CodeRead32(const u32 addr, bool const branch)
 {
-
     #if !DISABLE_ICACHE
         #ifdef JIT_ENABLED
         if (!NDS.IsJITEnabled())
@@ -1609,7 +1622,6 @@ bool ARMv5::DataRead8(u32 addr, u32* val)
         DataAbort();
         return false;
     }
-
 
     #if !DISABLE_DCACHE
         #ifdef JIT_ENABLED
@@ -1657,7 +1669,6 @@ bool ARMv5::DataRead16(u32 addr, u32* val)
         return false;
     }
 
-
     #if !DISABLE_DCACHE
         #ifdef JIT_ENABLED
         if (!NDS.IsJITEnabled())
@@ -1704,7 +1715,6 @@ bool ARMv5::DataRead32(u32 addr, u32* val)
         return false;
     }
 
-   
     #if !DISABLE_DCACHE
         #ifdef JIT_ENABLED
         if (!NDS.IsJITEnabled())
@@ -1750,7 +1760,6 @@ bool ARMv5::DataRead32S(u32 addr, u32* val)
         return false;
     }
 
-    addr &= ~3;
     #if !DISABLE_DCACHE
         #ifdef JIT_ENABLED
         if (!NDS.IsJITEnabled())
@@ -1793,7 +1802,6 @@ bool ARMv5::DataWrite8(u32 addr, u8 val)
         return false;
     }
 
-    
     #if !DISABLE_DCACHE
         #ifdef JIT_ENABLED
         if (!NDS.IsJITEnabled())
@@ -1839,7 +1847,6 @@ bool ARMv5::DataWrite16(u32 addr, u16 val)
         DataAbort();
         return false;
     }
-
 
     #if !DISABLE_DCACHE
         #ifdef JIT_ENABLED
@@ -1933,7 +1940,6 @@ bool ARMv5::DataWrite32S(u32 addr, u32 val, bool dataabort)
         return false;
     }
 
-    addr &= ~3;
     #if !DISABLE_DCACHE
         #ifdef JIT_ENABLED
         if (!NDS.IsJITEnabled())

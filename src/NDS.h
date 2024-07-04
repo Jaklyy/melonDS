@@ -192,6 +192,8 @@ enum
     Mem9_VRAM       = 0x00000100,
     Mem9_GBAROM     = 0x00020000,
     Mem9_GBARAM     = 0x00040000,
+    Mem9_ICache     = 0x10000000,
+    Mem9_DCache     = 0x20000000,
 
     Mem7_BIOS       = 0x00000001,
     Mem7_MainRAM    = 0x00000002,
