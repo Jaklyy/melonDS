@@ -323,7 +323,7 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
             NextInstr[0] = CodeRead32(addr-2, true) >> 16;
             Cycles += CodeCycles;
             NextInstr[1] = CodeRead32(addr+2, false);
-            Cycles += CodeCycles;
+            //Cycles += CodeCycles;
         }
         else
         {
@@ -647,7 +647,7 @@ void ARMv5::Execute()
             R[15] += 2;
             CurInstr = NextInstr[0];
             NextInstr[0] = NextInstr[1];
-            if (R[15] & 0x2) { NextInstr[1] >>= 16; CodeCycles = 0; }
+            if (R[15] & 0x2) { NextInstr[1] >>= 16; CodeCycles = 1; }
             else             NextInstr[1] = CodeRead32(R[15], false);
 
             // actually execute
