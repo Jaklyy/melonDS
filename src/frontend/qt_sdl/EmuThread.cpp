@@ -363,7 +363,7 @@ void EmuThread::run()
             if (emuInstance->doAudioSync && !fastforward)
                 emuInstance->audioSync();
 
-            double frametimeStep = nlines / (0x1FF61FE / (double)2130.0);
+            double frametimeStep = nlines / (60.0 * 263.0);
 
             {
                 bool limitfps = emuInstance->doLimitFPS && !fastforward;
