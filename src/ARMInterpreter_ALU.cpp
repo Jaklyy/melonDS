@@ -1497,7 +1497,7 @@ void T_MUL_REG(ARM* cpu)
 
     if (cpu->Num == 0)
     {
-        ((ARMv5*)cpu)->AddCycles_CIF(1, 2); // checkme?
+        ((ARMv5*)cpu)->AddCycles_CIF(1, 2);
     }
     else
     {
