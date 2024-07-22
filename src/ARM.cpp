@@ -197,6 +197,9 @@ void ARM::Reset()
 void ARMv5::Reset()
 {
     PU_Map = PU_PrivMap;
+    MemoryOverflow = 0;
+    MemoryType = 0;
+    MemoryQueue = false;
 
     ARM::Reset();
 }
@@ -636,6 +639,22 @@ void ARMv5::Execute()
 
     while (NDS.ARM9Timestamp < NDS.ARM9Target)
     {
+        // memory/multiply
+        /*if (MemoryQueue)
+        {
+            if (CPSR & 0x20) // THUMB
+            {
+                u32 icode = (CurInstr >> 6) & 0x3FF;
+                ARMInterpreter::THUMBInstrTable[icode](this);
+            }
+            else
+            {
+                u32 icode = ((CurInstr >> 4) & 0xF) | ((CurInstr >> 16) & 0xFF0);
+                ARMInterpreter::ARMInstrTable[icode](this);
+            }
+            MemoryQueue = false;
+        }*/
+
         if (CPSR & 0x20) // THUMB
         {
             GdbCheckC();
@@ -650,6 +669,17 @@ void ARMv5::Execute()
             // actually execute
             u32 icode = (CurInstr >> 6) & 0x3FF;
             ARMInterpreter::THUMBInstrTable[icode](this);
+
+            NDS.ARM9Timestamp += Cycles;
+            Cycles = 0;
+            
+            // memory/multiply
+            if (MemoryQueue)
+            {
+                //u32 icode = (CurInstr >> 6) & 0x3FF;
+                ARMInterpreter::THUMBInstrTable[icode](this);
+                MemoryQueue = false;
+            }
         }
         else
         {
@@ -673,6 +703,17 @@ void ARMv5::Execute()
             }
             else
                 AddCycles_C();
+
+            NDS.ARM9Timestamp += Cycles;
+            Cycles = 0;
+            
+            // memory/multiply
+            if (MemoryQueue)
+            {
+                u32 icode = ((CurInstr >> 4) & 0xF) | ((CurInstr >> 16) & 0xFF0);
+                ARMInterpreter::ARMInstrTable[icode](this);
+                MemoryQueue = false;
+            }
         }
 
         // TODO optimize this shit!!!
@@ -691,8 +732,8 @@ void ARMv5::Execute()
         }*/
         if (IRQ) TriggerIRQ();
 
-        NDS.ARM9Timestamp += Cycles;
-        Cycles = 0;
+        //NDS.ARM9Timestamp += Cycles;
+        //Cycles = 0;
     }
 
     if (Halted == 2)
@@ -1244,125 +1285,203 @@ bool ARMv4::DataWrite32S(u32 addr, u32 val, bool dataabort)
 }
 
 
-void ARMv5::AddCycles_CD_STR()
+s32 ARMv5::MemoryTimingsLDR()
 {
-    s32 numC = (R[15] & 0x2) ? 0 : CodeCycles;
-    s32 numD = DataCycles;
-
-    s32 early;
-    if (DataRegion == Mem9_ITCM)
+    if (CodeRegion == Mem9_ITCM)
     {
-        early = (CodeRegion == Mem9_ITCM) ? 0 : 2;
+        return ((DataRegion == Mem9_ITCM) ? 0 : 2);
     }
-    else if (DataRegion == Mem9_DTCM)
+    else if ((CodeRegion == Mem9_MainRAM) && (CodeRegion == DataRegion))
     {
-        early = 2;
+        return 1;
     }
-    else if (DataRegion == Mem9_MainRAM)
-    {
-        early = (CodeRegion == Mem9_MainRAM) ? 0 : 18; // CHECKME: how early can main ram be?
-    }
-    else early = (DataRegion == CodeRegion) ? 4 : 6;
-    
-    s32 code = numC - early;
-    if (code < 0) code = 0;
-    Cycles += std::max(code + numD, numC);
+    else return 7;
 }
 
-void ARMv5::AddCycles_CD_STM()
+s32 ARMv5::MemoryTimingsLDM()
 {
-    s32 numC = (R[15] & 0x2) ? 0 : CodeCycles;
-    s32 numD = DataCycles;
+    // a 16 bit bus executes on the 5th to last memory stage cycle
+    // also dont ask me why itcm makes it the 3rd to last cycle? I dont think it should even be working...?
+    s32 bus16 = ((CodeRegion == Mem9_ITCM) ? 2 : 5);
+    // a 32 bit bus executes on the 3rd to last memory stage cycle
+    s32 bus32 = ((CodeRegion == Mem9_ITCM) ? 2 : 3);
 
-    s32 early;
-    if (DataRegion == Mem9_ITCM)
-    {
-        early = (CodeRegion == Mem9_ITCM) ? -1 : 0; // stm adds either: no penalty or benefit to itcm loads, or a 1 cycle penalty if executing from itcm.
-    }
-    else if (DataRegion == Mem9_DTCM)
-    {
-        early = 2;
-    }
-    else if (DataRegion == Mem9_MainRAM)
-    {
-        early = (CodeRegion == Mem9_MainRAM) ? 0 : 18; // CHECKME: how early can main ram be?
-    }
-    else early = (DataRegion == CodeRegion) ? 4 : 6;
-    
-    s32 code = numC - early;
-    if (code < 0) code = 0;
-    Cycles += std::max(code + numD, numC);
-}
-
-void ARMv5::AddCycles_CDI_LDR()
-{
-    // LDR cycles. ARM9 seems to skip the internal cycle here.
-    s32 numC = (R[15] & 0x2) ? 0 : CodeCycles;
-    s32 numD = DataCycles;
-
-    // if a 32 bit bus, start 2 cycles early; else, start 4 cycles early
-    s32 early;
-    if (DataRegion == Mem9_ITCM)
-    {
-        early = (CodeRegion == Mem9_ITCM) ? 0 : 2;
-    }
-    else if (DataRegion == Mem9_DTCM)
-    {
-        early = 2;
-    }
-    else if (DataRegion == Mem9_MainRAM)
-    {
-        early = (CodeRegion == Mem9_MainRAM) ? 0 : 6;
-    }
-    else early = 6;
-    
-    s32 code = numC - early;
-    if (code < 0) code = 0;
-    Cycles += std::max(code + numD, numC);
-}
-
-void ARMv5::AddCycles_CDI_LDM()
-{
-    // LDM cycles. ARM9 seems to skip the internal cycle here.
-    s32 numC = (R[15] & 0x2) ? 0 : CodeCycles;
-    s32 numD = DataCycles;
-
-    // if a 32 bit bus, start 2 cycles early; else, start 4 cycles early
-    s32 early;
     switch (DataRegion)
     {
-        case 0: // background region;
-        case Mem9_DTCM:
-        case Mem9_BIOS:
+        case 0: // background region; // CHECKME
+        case Mem9_BIOS: // CHECKME
         case Mem9_WRAM:
-        case Mem9_IO:
+        case Mem9_IO: // CHECKME
         case Mem9_Pal: // CHECKME
         default:
-            early = 2;
-            break;
+            return bus32;
 
         case Mem9_OAM: // CHECKME
-        case Mem9_GBAROM:
-        case Mem9_GBARAM:
-            early = 4;
-            break;
+        case Mem9_GBAROM: // CHECKME
+        case Mem9_GBARAM: // CHECKME
+            return bus16;
+            
+        case Mem9_DTCM:
+            return ((CodeRegion == Mem9_ITCM) ? 1 : ((~DataCycles & 1) + 1)); // checkme
 
         case Mem9_MainRAM:
-            early = (CodeRegion == Mem9_MainRAM) ? 0 : 4;
-            break;
+            return ((CodeRegion == Mem9_MainRAM) ? 1 : bus16);
 
         case Mem9_VRAM: // the dsi can toggle the bus width of vram between 32 and 16 bit
-            early = (NDS.ConsoleType == 0 || !(((DSi&)NDS).SCFG_EXT[0] & (1<<13))) ? 4 : 2;
-            break;
+            return ((NDS.ARM9ClockShift == 1) || !(((DSi&)NDS).SCFG_EXT[0] & (1<<13))) ? bus16 : bus32;
 
-        case Mem9_ITCM: // itcm data fetches cannot be done at the same time as a code fetch, it'll even incurr a 1 cycle penalty when executing from itcm
-            early = (CodeRegion == Mem9_ITCM) ? -1 : 0;
-            break;
+        case Mem9_ITCM: // itcm data fetches cannot be done at the same time as a code fetch, it'll even incurr a 1 cycle penalty when executing from itcm (why?)
+            return ((CodeRegion == Mem9_ITCM) ? -1 : -(DataCycles & 1)); // checkme
     }
-    
-    s32 code = numC - early;
-    if (code < 0) code = 0;
-    Cycles += std::max(code + numD, numC);
+}
+
+s32 ARMv5::MemoryTimingsLDMSingle()
+{
+    s32 ret = 1;
+    if (DataRegion == Mem9_ITCM)
+    {
+        ret -= 2;
+    }
+    else if (DataRegion == Mem9_DTCM && CodeRegion == Mem9_ITCM) ret -= 1;
+
+    return ret;
+}
+
+s32 ARMv5::MemoryTimingsSTR()
+{
+    if ((CodeRegion == DataRegion))
+    {
+        return ((DataRegion == Mem9_MainRAM) ? 1 : 5);
+    }
+
+    s32 ret;
+    if (CodeRegion == Mem9_ITCM) ret = 2; // CHECKME: does this really not cause contention?
+    else ret = 7;
+
+    if (DataRegion == Mem9_MainRAM) ret += 4;
+
+    return ret;
+}
+
+s32 ARMv5::MemoryTimingsSTMSingle()
+{
+    if (DataRegion == Mem9_ITCM) return -1;
+
+    if (DataRegion == Mem9_MainRAM) return ((CodeRegion == DataRegion) ? 1 : 5);
+
+    if (CodeRegion == Mem9_ITCM)
+    {
+        if (DataRegion == Mem9_DTCM) return 0;
+        else return 1;
+    }
+    else
+    {
+        return 1;
+    }
+}
+
+s32 ARMv5::MemoryTimingsSTM()
+{
+    if (CodeRegion == Mem9_ITCM)
+    {
+        if (DataRegion == Mem9_ITCM) return -1;
+        if (DataRegion == Mem9_DTCM) return 1;
+        if (DataRegion == Mem9_MainRAM) return 6;
+        return 2;
+    }
+    if (DataRegion == Mem9_ITCM) return 0 - (DataCycles & 1);
+    if (DataRegion == Mem9_DTCM) return 2 - (DataCycles & 1);
+    if (DataRegion == Mem9_MainRAM) return ((CodeRegion == DataRegion) ? 1 : 11);
+    return ((DataRegion == CodeRegion) ? 5 : 7);
+}
+
+void ARMv5::AddCycles(s32 numX)
+{
+    if (MemoryType != 0)
+    {
+        // todo: handle interlocks
+        s32 early;
+        switch(MemoryType)
+        {
+            case 1:
+                early = MemoryTimingsLDR();
+                break;
+            case 2: // LDM 1 reg
+                early = MemoryTimingsLDMSingle();
+                break;
+            case 3: // LDM >1 reg
+                early = MemoryTimingsLDM();
+                break;
+            case 4:
+                early = MemoryTimingsSTR();
+                break;
+            case 5:
+                early = MemoryTimingsSTMSingle();
+                break;
+            case 6:
+                early = MemoryTimingsSTM();
+        }
+
+        if (NDS.ARM9RoundMask == 3) early *= 2; // CHECKME
+
+        s32 numM = DataCycles - early;
+
+        if (numM < 0)
+        {
+            early += numM;
+            numM = 0;
+        }
+        Cycles += numM;
+        
+        u32 delay = ((CodeRegion == Mem9_ITCM) ? 0 : (((NDS.ARM9Timestamp + numX + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + numX + Cycles)));
+
+        s32 numFX = numX + CodeCycles + delay;
+
+        if (early < numFX)
+        {
+            if (CodeCycles + delay > 1)
+                MemoryOverflow = -1;
+        }
+        else MemoryOverflow = early - numFX;
+
+        Cycles += numFX;
+        MemoryType = 0;
+    }
+    else
+    {
+        // todo: handle interlocks
+
+        // we dont handle the case of a memoryoverflow of 0 because it should be impossible without a memory, fetch, and execute stage of 1 cycle.
+        // if you can get this case with an execute stage that ends before the others it should be possible for the next execute and "faux" memory stage to overlap them by 1?
+        if (MemoryOverflow > 0) // memory stage ended after fetch stage (this should only be possible by 1 cycle at most?)
+        {
+            // if a "true" memory stage is occuring
+            if (DataCycles != 0)
+            {
+                Cycles += MemoryOverflow;
+            }
+        }
+        // seems like an execute/memory stage can begin on the cycle a fetch ends?
+        else if (MemoryOverflow < 0) // memory stage ended before fetch stage
+        {
+            numX -= 1;
+            if (numX < 0) numX = 0;
+        }
+
+        Cycles += numX;
+
+        // Add instruction cache here?
+        if (CodeRegion != Mem9_ITCM)
+            Cycles += ((NDS.ARM9Timestamp + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles); // align with next bus cycle
+            
+        Cycles += CodeCycles;
+
+        if (numX == 0 && MemoryOverflow >= 0 && CodeCycles == 1)
+            MemoryOverflow = 0;
+        else MemoryOverflow = -1;
+    }
+
+    DataCycles = 0;
 }
 
 void ARMv4::AddCycles_C()

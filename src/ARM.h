@@ -142,10 +142,10 @@ public:
     virtual void AddCycles_C() = 0;
     virtual void AddCycles_CI(s32 numI) = 0;
     virtual void AddCycles_CDI_LDR() = 0;
-    virtual void AddCycles_CDI_LDM() = 0;
+    virtual void AddCycles_CDI_LDM(bool multireg) = 0;
     virtual void AddCycles_CDI_SWP() = 0;
     virtual void AddCycles_CD_STR() = 0;
-    virtual void AddCycles_CD_STM() = 0;
+    virtual void AddCycles_CD_STM(bool multireg) = 0;
 
     void CheckGdbIncoming();
 
@@ -264,38 +264,20 @@ public:
     bool DataWrite32(u32 addr, u32 val) override;
     bool DataWrite32S(u32 addr, u32 val, bool dataabort = false) override;
 
-    void AddCycles_C() override
-    {
-        // code only. always nonseq 32-bit for ARM9.
-        s32 numC = CodeCycles;
-        Cycles += numC;
-    }
-
-    void AddCycles_CI(s32 numI) override
-    {
-        // code||internal
-        s32 numC = CodeCycles;
-        numI += 1;
-        Cycles += std::max(numC, numI);
-    }
-
-    void AddCycles_CIF(s32 numI, s32 numL)
-    {
-        // (code||internal)+forced
-        // used by certain multiply instructions
-        // seems likely that the execute stage occurs 2 cycles before the fetch stage ends....?
-        // could also be in some way related to interlock and the memory stage
-        // though that doesn't explain why some non-S variants trigger this
-        s32 numC = CodeCycles;
-        numI += 1;
-        Cycles += std::max(numC, numI) + numL;
-    }
-
-    void AddCycles_CDI_LDR() override;
-    void AddCycles_CDI_LDM() override;
+    s32 MemoryTimingsLDR();
+    s32 MemoryTimingsLDM();
+    s32 MemoryTimingsLDMSingle();
+    s32 MemoryTimingsSTR();
+    s32 MemoryTimingsSTM();
+    s32 MemoryTimingsSTMSingle();
+    void AddCycles(s32 numX);
+    void AddCycles_C() override { AddCycles(0); }
+    void AddCycles_CI(s32 numI) override { AddCycles(numI); }
+    void AddCycles_CDI_LDR() override { MemoryType = 1; }
+    void AddCycles_CDI_LDM(bool multireg) override { MemoryType = (multireg ? 3 : 2); }
     void AddCycles_CDI_SWP() override { AddCycles_CD_STR(); } // uses the same behavior as str
-    void AddCycles_CD_STR() override;
-    void AddCycles_CD_STM() override;
+    void AddCycles_CD_STR() override { MemoryType = 4; }
+    void AddCycles_CD_STM(bool multireg) override { MemoryType = (multireg ? 6 : 5); }
 
     void GetCodeMemRegion(const u32 addr, MemRegion* region);
 
@@ -664,6 +646,10 @@ public:
     u8 MemTimings[CP15_MAP_ENTRYCOUNT][4];
 
     bool (*GetMemRegion)(u32 addr, bool write, MemRegion* region);
+    
+    bool MemoryQueue;
+    u8 MemoryType; // 0 none/other - 1 ldr - 2 ldm(1 reg) - 3 ldm(>1 reg) - 4 str - 5 stm(1 reg) - 6 stm(>1 reg)
+    s32 MemoryOverflow;
 
 #ifdef GDBSTUB_ENABLED
     u32 ReadMem(u32 addr, int size) override;
@@ -716,11 +702,11 @@ public:
     void AddCycles_CI(s32 num) override;
     void AddCycles_CDI();
     void AddCycles_CDI_LDR() override { AddCycles_CDI(); }
-    void AddCycles_CDI_LDM() override { AddCycles_CDI(); }
+    void AddCycles_CDI_LDM(bool multireg) override { AddCycles_CDI(); }
     void AddCycles_CDI_SWP() override { AddCycles_CDI(); } // checkme?
     void AddCycles_CD();
     void AddCycles_CD_STR() override { AddCycles_CD(); }
-    void AddCycles_CD_STM() override { AddCycles_CD(); }
+    void AddCycles_CD_STM(bool multireg) override { AddCycles_CD(); }
 
 protected:
     u8 BusRead8(u32 addr) override;

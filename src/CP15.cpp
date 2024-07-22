@@ -1641,6 +1641,8 @@ bool ARMv5::DataRead8(u32 addr, u32* val)
 
     if (addr < ITCMSize)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_ITCM;
         DataCycles = 1;
         *val = *(u8*)&ITCM[addr & (ITCMPhysicalSize - 1)];
@@ -1648,11 +1650,17 @@ bool ARMv5::DataRead8(u32 addr, u32* val)
     }
     if ((addr & DTCMMask) == DTCMBase)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_DTCM;
         DataCycles = 1;
         *val = *(u8*)&DTCM[addr & (DTCMPhysicalSize - 1)];
         return true;
     }
+    
+    if (MemoryOverflow > 0) Cycles += MemoryOverflow;
+    MemoryOverflow = 0;
+    Cycles += ((NDS.ARM9Timestamp + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles);
     
     *val = BusRead8(addr);
     DataRegion = NDS.ARM9Regions[addr >> 14];
@@ -1687,6 +1695,8 @@ bool ARMv5::DataRead16(u32 addr, u32* val)
 
     if (addr < ITCMSize)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_ITCM;
         DataCycles = 1;
         *val = *(u16*)&ITCM[addr & (ITCMPhysicalSize - 2)];
@@ -1694,11 +1704,17 @@ bool ARMv5::DataRead16(u32 addr, u32* val)
     }
     if ((addr & DTCMMask) == DTCMBase)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_DTCM;
         DataCycles = 1;
         *val = *(u16*)&DTCM[addr & (DTCMPhysicalSize - 2)];
         return true;
     }
+    
+    if (MemoryOverflow > 0) Cycles += MemoryOverflow;
+    MemoryOverflow = 0;
+    Cycles += ((NDS.ARM9Timestamp + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles);
     
     *val = BusRead16(addr & ~1);
     DataRegion = NDS.ARM9Regions[addr >> 14];
@@ -1733,6 +1749,8 @@ bool ARMv5::DataRead32(u32 addr, u32* val)
 
     if (addr < ITCMSize)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_ITCM;
         DataCycles = 1;
         *val = *(u32*)&ITCM[addr & (ITCMPhysicalSize - 4)];
@@ -1740,11 +1758,17 @@ bool ARMv5::DataRead32(u32 addr, u32* val)
     }
     if ((addr & DTCMMask) == DTCMBase)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_DTCM;
         DataCycles = 1;
         *val = *(u32*)&DTCM[addr & (DTCMPhysicalSize - 4)];
         return true;
     }
+    
+    if (MemoryOverflow > 0) Cycles += MemoryOverflow;
+    MemoryOverflow = 0;
+    Cycles += ((NDS.ARM9Timestamp + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles);
 
     *val = BusRead32(addr & ~0x03);
     DataRegion = NDS.ARM9Regions[addr >> 14];
@@ -1789,8 +1813,12 @@ bool ARMv5::DataRead32S(u32 addr, u32* val)
         return true;
     }
 
+    // we do this specifically to handle ldms across memory boundaries (specifically itcm -> not dtcm / dtcm -> not itcm) properly
+    // could probably be removed if we dont care about a potential 1 (ntr)/3 (twl) cycle inaccuracy in that case
+    Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
+
     *val = BusRead32(addr & ~0x03);
-    DataCycles += MemTimings[addr >> BUSCYCLES_MAP_GRANULARITY_LOG2][BUSCYCLES_S32];
+    DataCycles += MemTimings[addr >> 12][3];
     return true;
 }
 
@@ -1820,6 +1848,8 @@ bool ARMv5::DataWrite8(u32 addr, u8 val)
 
     if (addr < ITCMSize)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_ITCM;
         DataCycles = 1;
         *(u8*)&ITCM[addr & (ITCMPhysicalSize - 1)] = val;
@@ -1828,11 +1858,17 @@ bool ARMv5::DataWrite8(u32 addr, u8 val)
     }
     if ((addr & DTCMMask) == DTCMBase)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_DTCM;
         DataCycles = 1;
         *(u8*)&DTCM[addr & (DTCMPhysicalSize - 1)] = val;
         return true;
     }
+    
+    if (MemoryOverflow > 0) Cycles += MemoryOverflow;
+    MemoryOverflow = 0;
+    Cycles += ((NDS.ARM9Timestamp + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles);
 
     BusWrite8(addr, val);
     DataRegion = NDS.ARM9Regions[addr >> 14];
@@ -1866,6 +1902,8 @@ bool ARMv5::DataWrite16(u32 addr, u16 val)
 
     if (addr < ITCMSize)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_ITCM;
         DataCycles = 1;
         *(u16*)&ITCM[addr & (ITCMPhysicalSize - 2)] = val;
@@ -1874,11 +1912,17 @@ bool ARMv5::DataWrite16(u32 addr, u16 val)
     }
     if ((addr & DTCMMask) == DTCMBase)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_DTCM;
         DataCycles = 1;
         *(u16*)&DTCM[addr & (DTCMPhysicalSize - 2)] = val;
         return true;
     }
+    
+    if (MemoryOverflow > 0) Cycles += MemoryOverflow;
+    MemoryOverflow = 0;
+    Cycles += ((NDS.ARM9Timestamp + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles);
 
     BusWrite16(addr & ~1, val);
     DataRegion = NDS.ARM9Regions[addr >> 14];
@@ -1912,6 +1956,8 @@ bool ARMv5::DataWrite32(u32 addr, u32 val)
 
     if (addr < ITCMSize)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_ITCM;
         DataCycles = 1;
         *(u32*)&ITCM[addr & (ITCMPhysicalSize - 4)] = val;
@@ -1920,11 +1966,17 @@ bool ARMv5::DataWrite32(u32 addr, u32 val)
     }
     if ((addr & DTCMMask) == DTCMBase)
     {
+        Cycles += MemoryOverflow;
+        MemoryOverflow = 0;
         DataRegion = Mem9_DTCM;
         DataCycles = 1;
         *(u32*)&DTCM[addr & (DTCMPhysicalSize - 4)] = val;
         return true;
     }
+    
+    if (MemoryOverflow > 0) Cycles += MemoryOverflow;
+    MemoryOverflow = 0;
+    Cycles += ((NDS.ARM9Timestamp + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles);
 
     BusWrite32(addr & ~3, val);
     DataRegion = NDS.ARM9Regions[addr >> 14];
@@ -1972,8 +2024,12 @@ bool ARMv5::DataWrite32S(u32 addr, u32 val, bool dataabort)
         return true;
     }
 
+    // we do this specifically to handle ldms across memory boundaries (specifically itcm -> not dtcm / dtcm -> not itcm) properly
+    // could probably be removed if we dont care about a potential 1 (ntr)/3 (twl) cycle inaccuracy in that case
+    Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
+
     BusWrite32(addr & ~3, val);
-    DataCycles += MemTimings[addr >> BUSCYCLES_MAP_GRANULARITY_LOG2][BUSCYCLES_S32];
+    DataCycles += MemTimings[addr >> 12][3];
     return true;
 }
 
