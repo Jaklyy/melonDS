@@ -1433,7 +1433,7 @@ void ARMv5::AddCycles(s32 numX)
         }
         Cycles += numM;
         
-        u32 delay = ((CodeRegion == Mem9_ITCM) ? 0 : (((NDS.ARM9Timestamp + numX + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + numX + Cycles)));
+        u32 delay = ((CodeRegion == Mem9_ITCM || CodeRegion == Mem9_ICache) ? 0 : (((NDS.ARM9Timestamp + numX + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + numX + Cycles)));
 
         s32 numFX = numX + CodeCycles + delay;
 
@@ -1471,7 +1471,7 @@ void ARMv5::AddCycles(s32 numX)
         Cycles += numX;
 
         // Add instruction cache here?
-        if (CodeRegion != Mem9_ITCM)
+        if (CodeRegion != Mem9_ITCM && CodeRegion != Mem9_ICache)
             Cycles += ((NDS.ARM9Timestamp + Cycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles); // align with next bus cycle
             
         Cycles += CodeCycles;
@@ -1548,49 +1548,31 @@ void ARMv4::AddCycles_CD()
 
 u8 ARMv5::BusRead8(u32 addr)
 {
-    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
-    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
-
     return NDS.ARM9Read8(addr);
 }
 
 u16 ARMv5::BusRead16(u32 addr)
 {
-    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
-    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
-
     return NDS.ARM9Read16(addr);
 }
 
 u32 ARMv5::BusRead32(u32 addr)
 {
-    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
-    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
-
     return NDS.ARM9Read32(addr);
 }
 
 void ARMv5::BusWrite8(u32 addr, u8 val)
 {
-    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
-    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
-
     NDS.ARM9Write8(addr, val);
 }
 
 void ARMv5::BusWrite16(u32 addr, u16 val)
 {
-    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
-    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
-
     NDS.ARM9Write16(addr, val);
 }
 
 void ARMv5::BusWrite32(u32 addr, u32 val)
 {
-    u8 round = (NDS.ConsoleType == 0) ? 0x3 : 0x1;
-    NDS.ARM9Timestamp = (NDS.ARM9Timestamp + round) & ~round;
-
     NDS.ARM9Write32(addr, val);
 }
 

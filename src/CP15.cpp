@@ -388,12 +388,13 @@ u32 ARMv5::ICacheLookup(const u32 addr)
                 // retreive the data from memory, even if the data was cached
                 // See arm946e-s Rev 1 technical manual, 2.3.15 "Register 15, test State Register")
                 CodeCycles = NDS.ARM9MemTimings[tag >> 14][2];
+                CodeRegion = NDS.ARM9Regions[addr >> 14];
+                Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
                 if (CodeMem.Mem)
                 {
                     return *(u32*)&CodeMem.Mem[(addr & CodeMem.Mask) & ~3];
                 } else
                 {
-                    CodeRegion = NDS.ARM9Regions[addr >> 14];
                     return NDS.ARM9Read32(addr & ~3);
                 }     
             }
@@ -409,6 +410,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
     {
         CodeCycles = NDS.ARM9MemTimings[tag >> 14][2];
         CodeRegion = NDS.ARM9Regions[addr >> 14]; 
+        Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
         if (CodeMem.Mem)
         {
             return *(u32*)&CodeMem.Mem[(addr & CodeMem.Mask) & ~3];
@@ -447,7 +449,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
     line += id;
 
     u32* ptr = (u32 *)&ICache[line << ICACHE_LINELENGTH_LOG2];
-
+    
     if (CodeMem.Mem)
     {
         memcpy(ptr, &CodeMem.Mem[tag & CodeMem.Mask], ICACHE_LINELENGTH);
@@ -464,6 +466,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
     //printf("cache miss %08X: %d/%d\n", addr, NDS::ARM9MemTimings[addr >> 14][2], NDS::ARM9MemTimings[addr >> 14][3]);
     //                      first N32                                  remaining S32
     CodeCycles = (NDS.ARM9MemTimings[tag >> 14][2] + (NDS.ARM9MemTimings[tag >> 14][3] * ((DCACHE_LINELENGTH / 4) - 1))) << NDS.ARM9ClockShift;
+    Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
     CodeRegion = NDS.ARM9Regions[tag >> 14];
     return ptr[(addr & (ICACHE_LINELENGTH-1)) >> 2];
 }
@@ -537,6 +540,7 @@ u32 ARMv5::DCacheLookup(const u32 addr)
                     return *(u32*)&DTCM[addr & (DTCMPhysicalSize - 3)];
                 } else
                 {
+                    Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
                     DataRegion = NDS.ARM9Regions[addr >> 14];
                     return BusRead32(addr & ~3);
                 }     
@@ -565,6 +569,7 @@ u32 ARMv5::DCacheLookup(const u32 addr)
         } else
         {
             DataRegion = NDS.ARM9Regions[addr >> 14];
+            Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
             return BusRead32(addr & ~3);
         }        
     }
@@ -616,6 +621,7 @@ u32 ARMv5::DCacheLookup(const u32 addr)
             ptr[i >> 2] = *(u32*)&DTCM[(tag+i) & (DTCMPhysicalSize - 1)];
         } else
         {
+            Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
             ptr[i >> 2] = BusRead32(tag+i);
         }
         //Log(LogLevel::Debug,"DCache store @ %08x: %08x in set %i, line %i\n", tag+i, *(u32*)&ptr[i >> 2], line & 3, line >> 2);        
