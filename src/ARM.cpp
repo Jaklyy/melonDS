@@ -1422,7 +1422,7 @@ void ARMv5::AddCycles(s32 numX)
         
         if (cyclespent < 0) cyclespent = 0;
 
-        if (CodeRegion == Mem9_ITCM || CodeRegion == Mem9_ICache) 
+        if (CodeRegion != Mem9_ITCM && CodeRegion != Mem9_ICache) 
             CodeCycles += (((NDS.ARM9Timestamp + cyclespent + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + cyclespent));
 
         cyclespent += CodeCycles;
