@@ -183,6 +183,20 @@ public:
 
     MemRegion CodeMem;
 
+    // ==== various interlock trackers used by the arm9 ====
+
+    // mask of what registers are interlocked, each bit represents one register
+    u16 InterlockedRegs;
+
+    // mask of what registers were used by an instructions
+    u16 UsedRegs;
+
+    // used to determine what cycle a reg becomes available/is required
+    u8 InterlockTimers[16];
+
+    // used solely for execute stages longer than 1 cycle
+    u8 UsedTimers[16];
+
 #ifdef JIT_ENABLED
     u32 FastBlockLookupStart, FastBlockLookupSize;
     u64* FastBlockLookup;
@@ -647,9 +661,8 @@ public:
 
     bool (*GetMemRegion)(u32 addr, bool write, MemRegion* region);
     
-    bool MemoryQueue;
     u8 MemoryType; // 0 none/other - 1 ldr - 2 ldm(1 reg) - 3 ldm(>1 reg) - 4 str - 5 stm(1 reg) - 6 stm(>1 reg)
-    s32 MemoryOverflow;
+
 
 #ifdef GDBSTUB_ENABLED
     u32 ReadMem(u32 addr, int size) override;
