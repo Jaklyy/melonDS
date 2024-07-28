@@ -299,9 +299,7 @@ void ARMv5::UpdatePURegions(const bool update_all)
     {
         // PU disabled
 
-        u8 mask = CP15_MAP_READABLE | CP15_MAP_WRITEABLE | CP15_MAP_EXECUTABLE;
-        if (CP15Control & CP15_CACHE_CR_DCACHEENABLE) mask |= CP15_MAP_DCACHEABLE | CP15_MAP_DCACHEWRITEBACK;
-        if (CP15Control & CP15_CACHE_CR_ICACHEENABLE) mask |= CP15_MAP_ICACHEABLE;
+        u8 mask = 0x07;
 
         memset(PU_UserMap, mask, CP15_MAP_ENTRYCOUNT);
         memset(PU_PrivMap, mask, CP15_MAP_ENTRYCOUNT);
