@@ -202,6 +202,7 @@ void ARM::Reset()
 void ARMv5::Reset()
 {
     PU_Map = PU_PrivMap;
+    LastDataCycles = 0;
     MemoryType = 0;
 
     ARM::Reset();
@@ -1251,23 +1252,22 @@ s32 ARMv5::MemoryTimingsLDR()
 {
     if (CodeRegion == Mem9_ITCM)
     {
-        return ((DataRegion == Mem9_ITCM) ? 0 : 2);
+        return ((DataRegion == Mem9_ITCM) ? 0 : 1);
     }
     else if ((CodeRegion == Mem9_MainRAM) && (CodeRegion == DataRegion))
     {
-        // cycle rounding should keep an overlap of code/data fetch from happening with 1 cycle execute stages
-        return 1;
+        return 0;
     }
-    else return 7;
+    else return 6;
 }
 
 s32 ARMv5::MemoryTimingsLDM()
 {
     // a 16 bit bus executes on the 5th to last memory stage cycle
     // also dont ask me why itcm makes it the 3rd to last cycle? I dont think it should even be working...?
-    s32 bus16 = ((CodeRegion == Mem9_ITCM) ? 2 : 5);
+    s32 bus16 = ((CodeRegion == Mem9_ITCM) ? 1 : 4);
     // a 32 bit bus executes on the 3rd to last memory stage cycle
-    s32 bus32 = ((CodeRegion == Mem9_ITCM) ? 2 : 3);
+    s32 bus32 = ((CodeRegion == Mem9_ITCM) ? 1 : 2);
 
     switch (DataRegion)
     {
@@ -1288,7 +1288,7 @@ s32 ARMv5::MemoryTimingsLDM()
             return ((CodeRegion == Mem9_ITCM) ? 1 : ((~DataCycles & 1) + 1)); // checkme
 
         case Mem9_MainRAM:
-            return ((CodeRegion == Mem9_MainRAM) ? 1 : bus16);
+            return ((CodeRegion == Mem9_MainRAM) ? 0 : bus16);
 
         case Mem9_VRAM: // the dsi can toggle the bus width of vram between 32 and 16 bit
             return ((NDS.ConsoleType == 0) || !(((DSi&)NDS).SCFG_EXT[0] & (1<<13))) ? bus16 : bus32;
@@ -1300,26 +1300,20 @@ s32 ARMv5::MemoryTimingsLDM()
 
 s32 ARMv5::MemoryTimingsLDMSingle()
 {
-    s32 ret = 1;
-    if (DataRegion == Mem9_ITCM)
-    {
-        ret -= 2;
-    }
-    else if (DataRegion == Mem9_DTCM && CodeRegion == Mem9_ITCM) ret -= 1;
-
-    return ret;
+    if (DataRegion == Mem9_ITCM) return -1;
+    else return ((DataRegion == Mem9_DTCM) ? 1 : 0);
 }
 
 s32 ARMv5::MemoryTimingsSTR()
 {
     if ((CodeRegion == DataRegion))
     {
-        return ((DataRegion == Mem9_MainRAM) ? 1 : 5);
+        return ((DataRegion == Mem9_MainRAM) ? 0 : 4);
     }
 
     s32 ret;
-    if (CodeRegion == Mem9_ITCM) ret = 2; // CHECKME: does this really not cause contention?
-    else ret = 7;
+    if (CodeRegion == Mem9_ITCM) ret = 1; // CHECKME: does this really not cause contention?
+    else ret = 6;
 
     if (DataRegion == Mem9_MainRAM) ret += 4;
 
@@ -1330,17 +1324,11 @@ s32 ARMv5::MemoryTimingsSTMSingle()
 {
     if (DataRegion == Mem9_ITCM) return -1;
 
-    if (DataRegion == Mem9_MainRAM) return ((CodeRegion == DataRegion) ? 1 : 5);
-
-    if (CodeRegion == Mem9_ITCM)
-    {
-        if (DataRegion == Mem9_DTCM) return 0;
-        else return 1;
-    }
-    else
-    {
-        return 1;
-    }
+    if (DataRegion == Mem9_MainRAM) return ((CodeRegion == DataRegion) ? 0 : 4);
+    
+    if (DataRegion == Mem9_DTCM) return ((CodeRegion == Mem9_ITCM) ? 0 : 1);
+    
+    return 0;
 }
 
 s32 ARMv5::MemoryTimingsSTM()
@@ -1348,214 +1336,150 @@ s32 ARMv5::MemoryTimingsSTM()
     if (CodeRegion == Mem9_ITCM)
     {
         if (DataRegion == Mem9_ITCM) return -1;
-        if (DataRegion == Mem9_DTCM) return 1;
-        if (DataRegion == Mem9_MainRAM) return 6;
-        return 2;
+        if (DataRegion == Mem9_MainRAM) return 5;
+        return 1;
     }
     if (DataRegion == Mem9_ITCM) return 0 - (DataCycles & 1);
     if (DataRegion == Mem9_DTCM) return 2 - (DataCycles & 1);
-    if (DataRegion == Mem9_MainRAM) return ((CodeRegion == DataRegion) ? 1 : 11);
-    return ((DataRegion == CodeRegion) ? 5 : 7);
+    if (DataRegion == Mem9_MainRAM) return ((CodeRegion == DataRegion) ? 0 : 10);
+    return ((DataRegion == CodeRegion) ? 4 : 6);
 }
 
 void ARMv5::AddCycles(s32 numX)
 {
+    s32 numM = 0;
+    s32 early;
+    // special handling for the needless complexities of the load/store instruction's memory stages
     if (MemoryType != 0)
     {
-        if ((DataRegion == Mem9_MainRAM) && (MainRAMOvertime > -1))
+        // if we did a memory access to main ram then we can't *actually* do that during another main ram access
+        // so we handle that... kinda hackily? this should really be handled in the load/store functions but im lazy rn and it doesn't matter *yet*
+        if ((DataRegion == Mem9_MainRAM) && (MainRAMOvertime > Cycles))
             Cycles = MainRAMOvertime;
 
-        // determine overlap of memory and execute/fetch stages
-        s32 early;
+            // TODO: handle itcm the same way as main ram?
+
+        // determine, via convoluted means, the overlap of memory and execute/fetch stages
         switch(MemoryType)
         {
             case 1:
                 early = MemoryTimingsLDR();
                 break;
-            case 2: // LDM 1 reg
+            case 2: // LDM 1 reg (checkme: 0 reg?)
                 early = MemoryTimingsLDMSingle();
                 break;
             case 3: // LDM >1 reg
                 early = MemoryTimingsLDM();
                 break;
-            case 4:
+            case 4: // str
+            case 7: // swp
                 early = MemoryTimingsSTR();
                 break;
-            case 5:
+            case 5: // stm 1 reg (checkme: 0 reg?)
                 early = MemoryTimingsSTMSingle();
                 break;
-            case 6:
+            case 6: // stm >1 reg
                 early = MemoryTimingsSTM();
+                break;
+            default:
+                Platform::Log(LogLevel::Error, "ERROR: INVALID MEMORY STAGE TYPE!!!\n");
+                break;
         }
 
-        if (NDS.ARM9RoundMask == 3) early *= 2; // CHECKME
-        
-        s32 numM = DataCycles - early;
-        // check for interlocks
-        // note: r15 shouldn't be able to interlock?
-        u16 ILmask = InterlockedRegs & UsedRegs & 0x7FFF;
-        if (ILmask)
-        {
-            s32 time = 0;
-            if (numX > 0)
-            {
-                for (int i = 0; i < 15; i++)
-                {
-                    if ((ILmask & (1<<i)) && (time < (InterlockTimers[i] - UsedTimers[i])))
-                        time = InterlockTimers[i] - UsedTimers[i];
-                }
-            }
-            else
-            {
-                for (int i = 0; i < 15; i++)
-                {
-                    if ((ILmask & (1<<i)) && (time < InterlockTimers[i]))
-                        time = InterlockTimers[i];
-                }
-            }
-            numM = std::max(time, numM);
-        }
-        else if (numM < 0)
-        {
-            early += numM;
-            numM = 0;
-        }
+        // currently assuming that we can just multiply it by 2 for dsi cpu speeds? probably not actually how it works in practice tho...
+        if ((NDS.ARM9RoundMask == 3) && (DataRegion != Mem9_DTCM) && (DataRegion != Mem9_ITCM)) early = (early * 2) - 1; // CHECKME
+        // get the remaining amount of cycles early
+        numM = DataCycles - early;
+    
+        if (numM < 0) numM = 0;
 
-        s32 cyclespent = Cycles + numM + numX;
-        
-        if (cyclespent < 0) cyclespent = 0;
-
-        u32 wait = 0;
-        if ((CodeRegion == Mem9_MainRAM) && (MainRAMOvertime > cyclespent))
-            wait = MainRAMOvertime - cyclespent;
-            
-        cyclespent += wait;
-        if (CodeRegion != Mem9_ITCM && CodeRegion != Mem9_ICache)  
-            CodeCycles += (((NDS.ARM9Timestamp + cyclespent + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + cyclespent));
-
-        cyclespent += CodeCycles;
-        CodeCycles += wait;
-
-        NDS.ARM9Timestamp += cyclespent;
-        if ((numM == 0) && (numX == 0) && (Cycles < 0))
+        // swp is split into two accesses essentially?
+        // and basically we can't go earlier than the prior one
+        if (MemoryType == 7)
         {
-            CodeCycles++;
-        }
-        if (CodeCycles > 1)
-        {
-            Cycles = -1;
-        }
-        else Cycles = 0;
-
-        if (CodeRegion == Mem9_MainRAM)
-        {
-            MainRAMOvertime = 0 + Cycles;
-        }
-        else if (DataRegion == Mem9_MainRAM)
-        {
-            MainRAMOvertime = DataCycles - cyclespent;
-        }
-        else
-        {
-            MainRAMOvertime -= cyclespent;
-            if (MainRAMOvertime < -1) MainRAMOvertime = -1;
-        }
-
-        for (int i = 0; i < 15; i++)
-        {
-            if (InterlockedRegs & (1<<i))
-            {
-                if (InterlockTimers[i] <= cyclespent)
-                {
-                    InterlockedRegs &= ~(1<<i);
-                }
-                else InterlockTimers[i] -= cyclespent;
-            }
+            DataCycles += LastDataCycles;
+            numM += LastDataCycles;
         }
 
         MemoryType = 0;
     }
+    // check for interlocks
+    // note: r15 shouldn't be able to interlock?
+    u16 ILmask = InterlockedRegs & UsedRegs & 0x7FFF;
+    if (ILmask)
+    {
+        s32 time = 0;
+        if (numX > 0)
+        {
+            for (int i = 0; i < 15; i++)
+            {
+                if ((ILmask & (1<<i)) && (time < (InterlockTimers[i] - UsedTimers[i])))
+                    time = InterlockTimers[i] - UsedTimers[i];
+            }
+        }
+        else // if the execute cycles were 0 we can safely assume (citation needed) that all registers were needed on the same cycle
+        {
+            for (int i = 0; i < 15; i++)
+            {
+                if ((ILmask & (1<<i)) && (time < InterlockTimers[i]))
+                    time = InterlockTimers[i];
+            }
+        }
+        numM = std::max(time, numM);
+    }
+
+    s32 cyclespent = Cycles + numM + numX;
+
+    // at this point a cyclespent of -1 indicates that we're overlapping the prior code fetch stage
+    // and a fetch cannot overlap another fetch... probably...
+    if (cyclespent < 0) cyclespent = 0;
+
+    // if we are accessing main ram and we have an ongoing main ram access, then we must wait until the previous one completes
+    s32 wait = 0;
+    if ((CodeRegion == Mem9_MainRAM) && (MainRAMOvertime > cyclespent))
+        wait = MainRAMOvertime - cyclespent;
+
+    cyclespent += wait;
+    // if we are not fetching code from either ITCM or ICache then we need to wait for the next bus cycle
+    if (CodeRegion != Mem9_ITCM) // TODO: Check for ICache here when we implement it!!!
+        CodeCycles += (((NDS.ARM9Timestamp + cyclespent + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + cyclespent));
+        
+    // add cycles to the timestamp
+    cyclespent += CodeCycles;
+    NDS.ARM9Timestamp += cyclespent;
+
+    // track remaining cycles of main ram access
+    if (CodeRegion == Mem9_MainRAM)
+    {
+        // if we ended on a main ram fetch we can safely assume that there will be no remaining memory stage cycles
+        // unless we attempt to begin the next memory stage on the last cycle of the fetch
+        MainRAMOvertime = 0;
+    }
+    else if (DataRegion == Mem9_MainRAM)
+    {
+        MainRAMOvertime = DataCycles - cyclespent;
+    }
     else
     {
-        u32 numM = 0;
-        u16 ILmask = InterlockedRegs & UsedRegs & 0x7FFF;
-        if (ILmask)
-        {
-            s32 time = 0;
-            if (numX > 0)
-            {
-                for (int i = 0; i < 15; i++)
-                {
-                    if ((ILmask & (1<<i)) && (time < (InterlockTimers[i] - UsedTimers[i])))
-                        time = InterlockTimers[i] - UsedTimers[i];
-                }
-            }
-            else
-            {
-                for (int i = 0; i < 15; i++)
-                {
-                    if ((ILmask & (1<<i)) && (time < InterlockTimers[i]))
-                        time = InterlockTimers[i];
-                }
-            }
-            numM = time;
-        }
-                
-        s32 cyclespent = Cycles + numX + numM;
+        if (MainRAMOvertime <= cyclespent) MainRAMOvertime = 0;
+        else MainRAMOvertime -= cyclespent;
+    }
 
-        if (cyclespent < 0) cyclespent = 0;
-        
-        u32 wait = 0;
-        if ((CodeRegion == Mem9_MainRAM) && (MainRAMOvertime > cyclespent))
-            wait = MainRAMOvertime - cyclespent;
-            
-        cyclespent += wait;
-        if (CodeRegion != Mem9_ITCM && CodeRegion != Mem9_ICache)
-            CodeCycles += (((NDS.ARM9Timestamp + cyclespent + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + cyclespent));
-            
-        cyclespent += CodeCycles;
-        CodeCycles += wait;
-        
-        NDS.ARM9Timestamp += cyclespent;
-        if ((numM == 0) && (numX == 0) && (Cycles < 0))
+    // decrement/disable active interlocks
+    for (int i = 0; i < 15; i++)
+    {
+        if (InterlockedRegs & (1<<i))
         {
-            CodeCycles++;
-        }
-        if (CodeCycles > 1)
-        {
-            Cycles = -1;
-        }
-        else Cycles = 0;
-
-        if (CodeRegion == Mem9_MainRAM)
-        {
-            MainRAMOvertime = 0 + Cycles;
-        }
-        else if (DataRegion == Mem9_MainRAM)
-        {
-            MainRAMOvertime = DataCycles - cyclespent;
-        }
-        else
-        {
-            MainRAMOvertime -= cyclespent;
-            if (MainRAMOvertime < -1) MainRAMOvertime = -1;
-        }
-
-        for (int i = 0; i < 15; i++)
-        {
-            if (InterlockedRegs & (1<<i))
+            if (InterlockTimers[i] <= cyclespent)
             {
-                if (InterlockTimers[i] <= cyclespent)
-                {
-                    InterlockedRegs &= ~(1<<i);
-                }
-                else InterlockTimers[i] -= cyclespent;
+                InterlockedRegs &= ~(1<<i);
             }
+            else InterlockTimers[i] -= cyclespent;
         }
     }
-    
 
-    DataCycles = 0;
+    Cycles = 0;
+    DataCycles = 0; // reset this cause it breaks if i dont
 }
 
 void ARMv4::AddCycles_C()

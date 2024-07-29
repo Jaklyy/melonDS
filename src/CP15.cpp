@@ -339,7 +339,7 @@ void ARMv5::UpdateRegionTimings(u32 addrstart, u32 addrend)
         }
         else
         {
-            MemTimings[i][0] = bustimings[2] << NDS.ARM9ClockShift;
+            MemTimings[i][0] = (bustimings[2] << NDS.ARM9ClockShift) + 1;
         }
 
         if (pu & CP15_MAP_DCACHEABLE)
@@ -350,9 +350,9 @@ void ARMv5::UpdateRegionTimings(u32 addrstart, u32 addrend)
         }
         else
         {
-            MemTimings[i][1] = bustimings[0] << NDS.ARM9ClockShift;
-            MemTimings[i][2] = bustimings[2] << NDS.ARM9ClockShift;
-            MemTimings[i][3] = bustimings[3] << NDS.ARM9ClockShift;
+            MemTimings[i][1] = (bustimings[0] << NDS.ARM9ClockShift) + 1;
+            MemTimings[i][2] = (bustimings[2] << NDS.ARM9ClockShift) + 1;
+            MemTimings[i][3] = (bustimings[3] << NDS.ARM9ClockShift) + 1;
         }
     }
 }
@@ -1801,7 +1801,7 @@ bool ARMv5::DataRead32S(u32 addr, u32* val)
 
     // we do this specifically to handle ldms across memory boundaries (specifically itcm -> not dtcm / dtcm -> not itcm) properly
     // could probably be removed if we dont care about a potential 1 (ntr)/3 (twl) cycle inaccuracy in that case
-    Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
+    DataCycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
 
     *val = BusRead32(addr & ~0x03);
     DataCycles += MemTimings[addr >> 12][3];
@@ -1994,7 +1994,7 @@ bool ARMv5::DataWrite32S(u32 addr, u32 val, bool dataabort)
 
     // we do this specifically to handle ldms across memory boundaries (specifically itcm -> not dtcm / dtcm -> not itcm) properly
     // could probably be removed if we dont care about a potential 1 (ntr)/3 (twl) cycle inaccuracy in that case
-    Cycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
+    DataCycles += ((NDS.ARM9Timestamp + Cycles + DataCycles + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + Cycles + DataCycles);
 
     BusWrite32(addr & ~3, val);
     DataCycles += MemTimings[addr >> 12][3];
