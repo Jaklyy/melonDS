@@ -1599,6 +1599,7 @@ u32 ARMv5::CodeRead32(const u32 addr, bool const branch)
     if (addr < ITCMSize)
     {
         CodeCycles = 1;
+        CodeRegion = Mem9_ITCM;
         return *(u32*)&ITCM[addr & (ITCMPhysicalSize - 1)];
     }
 
@@ -1611,7 +1612,8 @@ u32 ARMv5::CodeRead32(const u32 addr, bool const branch)
         else
             CodeCycles = 1;
     }
-
+    
+    CodeRegion = NDS.ARM9Regions[addr >> 14];
     if (CodeMem.Mem) return *(u32*)&CodeMem.Mem[addr & CodeMem.Mask];
 
     return BusRead32(addr);

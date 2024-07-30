@@ -194,6 +194,7 @@ enum
     Mem9_GBARAM     = 0x00040000,
     Mem9_ICache     = 0x10000000,
     Mem9_DCache     = 0x20000000,
+    Mem9_NoFetch    = 0x80000000,
 
     Mem7_BIOS       = 0x00000001,
     Mem7_MainRAM    = 0x00000002,
