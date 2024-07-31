@@ -1261,7 +1261,9 @@ bool ARMv4::DataWrite32S(u32 addr, u32 val, bool dataabort)
 
 void ARMv5::AddCycles(s32 numX)
 {
-    s32 numM = 0;
+    // ==== Memory + Writeback ====
+
+    s32 numM;
     // special handling for the needless complexities of load/store instruction's memory stages
     if (MemoryType != 0)
     {
@@ -1280,7 +1282,7 @@ void ARMv5::AddCycles(s32 numX)
                     early = ((CodeRegion == Mem9_ITCM && !Store) ? 0 : 1);
                     break;
                 case 2: // ldm/stm >1 reg
-                    early = ((CodeRegion == Mem9_ITCM) ? -1 : -(DataCycles & 1));
+                    early = ((CodeRegion == Mem9_ITCM) ? -1 : -(DataCycles & 1)); // checkme
                     break;
                 case 3: // ldm/str 1 reg
                     early = -1;
@@ -1295,7 +1297,7 @@ void ARMv5::AddCycles(s32 numX)
                     early = 1;
                     break;
                 case 2: // ldm/stm >1 reg
-                    early = ((CodeRegion == Mem9_ITCM) ? 1 : !(DataCycles & 1)+1);
+                    early = ((CodeRegion == Mem9_ITCM) ? 1 : !(DataCycles & 1)+1); // checkme
                     break;
                 case 3: // ldm/str 1 reg
                     early = ((CodeRegion == Mem9_ITCM) ? 0 : 1);
@@ -1323,12 +1325,13 @@ void ARMv5::AddCycles(s32 numX)
         }
         else if (numM < 0) numM = 0;
 
-        if (!Store)
+        if (Store != 1)
         {
             DataCycles -= LastDataCycles;
             numM += DataCycles;
         }
     }
+    else numM = ((CodeCycles > 1) ? 0 : DataCycles); // note: this assumes that data cycles can never go above 1 outside of load/store instructions
 
     // check for interlocks
     // note: r15 shouldn't be able to interlock? (wait what about swp/swpb? those don't trigger jumps on arm9....)
@@ -1354,8 +1357,10 @@ void ARMv5::AddCycles(s32 numX)
         }
         numM = std::max(time, numM);
     }
-
+    
     s32 cyclespent = numM + Cycles;
+
+    // ==== Fetch + Decode + Execute ====
 
     // if we are accessing main ram and we have an ongoing main ram access, then we must wait until the previous one completes
     if (CodeRegion == Mem9_MainRAM)
@@ -1394,7 +1399,7 @@ void ARMv5::AddCycles(s32 numX)
 
     Cycles = 0;
     MemoryType = 0;
-    DataCycles = 0; // reset this cause it breaks if i dont
+    DataCycles = 0;
 }
 
 void ARMv4::AddCycles_C()

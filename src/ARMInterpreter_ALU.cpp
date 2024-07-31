@@ -829,16 +829,17 @@ void A_MUL(ARM* cpu)
 
     if (cpu->Num == 0)
     {
-        cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
+        cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
         cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
         cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
 
         if (cpu->CurInstr & (1<<20)) cpu->AddCycles_CI(3);
         else
         {
-            cpu->AddCycles_CI(1);
+            cpu->AddCycles_C();
+            cpu->DataCycles = 1;
             cpu->InterlockedRegs = 1 << ((cpu->CurInstr >> 16) & 0xF);
-            cpu->InterlockTimers[(cpu->CurInstr >> 16) & 0xF] = 1;
+            cpu->InterlockTimers[(cpu->CurInstr >> 16) & 0xF] = 2;
         }
     }
     else
@@ -871,7 +872,7 @@ void A_MLA(ARM* cpu)
 
     if (cpu->Num == 0)
     {
-        cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1<< ((cpu->CurInstr >> 12) & 0xF));
+        cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1<< ((cpu->CurInstr >> 12) & 0xF));
         cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
         cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
         cpu->UsedTimers[(cpu->CurInstr >> 12) & 0xF] = 1;
@@ -879,9 +880,10 @@ void A_MLA(ARM* cpu)
         if (cpu->CurInstr & (1<<20)) cpu->AddCycles_CI(3);
         else
         {
-            cpu->AddCycles_CI(1);
+            cpu->AddCycles_C();
+            cpu->DataCycles = 1;
             cpu->InterlockedRegs = 1 << ((cpu->CurInstr >> 16) & 0xF);
-            cpu->InterlockTimers[(cpu->CurInstr >> 16) & 0xF] = 1;
+            cpu->InterlockTimers[(cpu->CurInstr >> 16) & 0xF] = 2;
         }
     }
     else
@@ -913,7 +915,7 @@ void A_UMULL(ARM* cpu)
 
     if (cpu->Num == 0)
     {
-        cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
+        cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
         cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
         cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
 
@@ -957,7 +959,7 @@ void A_UMLAL(ARM* cpu)
 
     if (cpu->Num == 0)
     {
-        cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF)) | (1 << ((cpu->CurInstr >> 16) & 0xF));
+        cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF)) | (1 << ((cpu->CurInstr >> 16) & 0xF));
         cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
         cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
         cpu->UsedTimers[(cpu->CurInstr >> 12) & 0xF] = 1;
@@ -1000,7 +1002,7 @@ void A_SMULL(ARM* cpu)
 
     if (cpu->Num == 0)
     {
-        cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
+        cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
         cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
         cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
 
@@ -1044,7 +1046,7 @@ void A_SMLAL(ARM* cpu)
 
     if (cpu->Num == 0)
     {
-        cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF)) | (1 << ((cpu->CurInstr >> 16) & 0xF));
+        cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF)) | (1 << ((cpu->CurInstr >> 16) & 0xF));
         cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
         cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
         cpu->UsedTimers[(cpu->CurInstr >> 12) & 0xF] = 1;
@@ -1089,7 +1091,7 @@ void A_SMLAxy(ARM* cpu)
     if (OverflowAdd(res_mul, rn))
         cpu->CPSR |= 0x08000000;
 
-    cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF));
+    cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF));
     cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
     cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
     cpu->UsedTimers[(cpu->CurInstr >> 12) & 0xF] = 1;
@@ -1117,7 +1119,7 @@ void A_SMLAWy(ARM* cpu)
     if (OverflowAdd(res_mul, rn))
         cpu->CPSR |= 0x08000000;
 
-    cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF));
+    cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF));
     cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
     cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
     cpu->UsedTimers[(cpu->CurInstr >> 12) & 0xF] = 1;
@@ -1141,7 +1143,7 @@ void A_SMULxy(ARM* cpu)
 
     u32 res = ((s16)rm * (s16)rs);
     
-    cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
+    cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
     cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
     cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
 
@@ -1163,7 +1165,7 @@ void A_SMULWy(ARM* cpu)
 
     u32 res = ((s64)(s32)rm * (s16)rs) >> 16;
     
-    cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
+    cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF));
     cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
     cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
 
@@ -1193,15 +1195,16 @@ void A_SMLALxy(ARM* cpu)
     cpu->R[(cpu->CurInstr >> 12) & 0xF] = (u32)res;
     cpu->R[(cpu->CurInstr >> 16) & 0xF] = (u32)(res >> 32ULL);
 
-    cpu->UsedRegs |= (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF)) | (1 << ((cpu->CurInstr >> 16) & 0xF));
+    cpu->UsedRegs = (1 << (cpu->CurInstr & 0xF)) | (1 << ((cpu->CurInstr >> 8) & 0xF)) | (1 << ((cpu->CurInstr >> 12) & 0xF)) | (1 << ((cpu->CurInstr >> 16) & 0xF));
     cpu->UsedTimers[cpu->CurInstr & 0xF] = 0;
     cpu->UsedTimers[(cpu->CurInstr >> 8) & 0xF] = 0;
     cpu->UsedTimers[(cpu->CurInstr >> 12) & 0xF] = 1;
     cpu->UsedTimers[(cpu->CurInstr >> 16) & 0xF] = 2; // checkme
 
-    cpu->AddCycles_CI(1);
+    cpu->AddCycles_C();
+    cpu->DataCycles = 1;
     cpu->InterlockedRegs = 1 << ((cpu->CurInstr >> 16) & 0xF);
-    cpu->InterlockTimers[(cpu->CurInstr >> 16) & 0xF] = 1;
+    cpu->InterlockTimers[(cpu->CurInstr >> 16) & 0xF] = 2;
 }
 
 

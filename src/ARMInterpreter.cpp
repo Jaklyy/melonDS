@@ -207,7 +207,7 @@ void A_MRS(ARM* cpu)
         psr = cpu->CPSR;
 
     cpu->R[(cpu->CurInstr>>12) & 0xF] = psr;
-    if (cpu->Num != 1) cpu->AddCycles_CI(1); // arm9
+    if (cpu->Num != 1) { cpu->AddCycles_C(); cpu->DataCycles = 1; } // arm9
     else cpu->AddCycles_C(); // arm7
 }
 
@@ -272,9 +272,10 @@ void A_MRC(ARM* cpu)
 
     if (cpu->Num != 1) // arm 9
     {
-        cpu->AddCycles_CI(1); // checkme
+        cpu->AddCycles_C(); // checkme
         cpu->InterlockedRegs = 1 << ((cpu->CurInstr>>12)&0xF);
-        cpu->InterlockTimers[(cpu->CurInstr>>12)&0xF] = 1; // how long is the memory stage?
+        cpu->DataCycles = 1;
+        cpu->InterlockTimers[(cpu->CurInstr>>12)&0xF] = 2; // how long is the memory stage?
     }
     else cpu->AddCycles_CI(2 + 1); // arm7 -- TODO: checkme
 }
