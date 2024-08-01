@@ -657,7 +657,7 @@ public:
     
     s16 MainRAMOvertime;
     u8 MemoryType; // 0 none/other -- 1 ldr/str -- 2 ldm/stm(>1 reg) -- 3 ldm/stm(1 reg)
-    bool Store;
+    u8 Store;
     s32 LastDataCycles;
 
 
