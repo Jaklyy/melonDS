@@ -231,6 +231,9 @@ private:
 #ifdef JIT_ENABLED
     bool EnableJIT;
 #endif
+#ifdef GDBSTUB_ENABLED
+    bool EnableGDBStub = false;
+#endif
 
 public: // TODO: Encapsulate the rest of these members
     void* UserData;
@@ -431,7 +434,7 @@ public: // TODO: Encapsulate the rest of these members
 
     u32 GetPC(u32 cpu) const;
     u64 GetSysClockCycles(int num);
-    void NocashPrint(u32 cpu, u32 addr);
+    void NocashPrint(u32 cpu, u32 addr, bool appendNewline = true);
 
     void MonitorARM9Jump(u32 addr);
 
@@ -530,8 +533,9 @@ private:
     void SetWifiWaitCnt(u16 val);
     void SetGBASlotTimings();
     void EnterSleepMode();
-    template <bool EnableJIT>
+    template <CPUExecuteMode cpuMode>
     u32 RunFrame();
+
 public:
     NDS(NDSArgs&& args, void* userdata = nullptr) noexcept : NDS(std::move(args), 0, userdata) {}
     NDS() noexcept;
