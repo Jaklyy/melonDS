@@ -1361,7 +1361,7 @@ void ARMv5::AddCycles(s32 numX)
     cyclespent += numX;
 
     // if we are not fetching code from either ITCM or ICache then we need to wait for the next bus cycle
-    if (CodeRegion != Mem9_ITCM && CodeRegion != Mem9_NoFetch) // TODO: Check for ICache here when we implement it!!!
+    if (CodeRegion != Mem9_ITCM && CodeRegion != Mem9_NoFetch && CodeRegion != Mem9_ICache) // TODO: Check for ICache here when we implement it!!!
         CodeCycles += (((NDS.ARM9Timestamp + cyclespent + NDS.ARM9RoundMask) & ~NDS.ARM9RoundMask) - (NDS.ARM9Timestamp + cyclespent));
         
     // add cycles to the timestamp
