@@ -688,12 +688,12 @@ void ARMv5::Execute()
                 if constexpr (mode == CPUExecuteMode::InterpreterGDB)
                     GdbCheckC();
 
-            // prefetch
-            R[15] += 2;
-            CurInstr = NextInstr[0];
-            NextInstr[0] = NextInstr[1];
-            if (R[15] & 0x2) { NextInstr[1] >>= 16; CodeCycles = 1; CodeRegion = Mem9_NoFetch; }
-            else               NextInstr[1] = CodeRead32(R[15], false);
+                // prefetch
+                R[15] += 2;
+                CurInstr = NextInstr[0];
+                NextInstr[0] = NextInstr[1];
+                if (R[15] & 0x2) { NextInstr[1] >>= 16; CodeCycles = 1; CodeRegion = Mem9_NoFetch; }
+                else               NextInstr[1] = CodeRead32(R[15], false);
 
                 // actually execute
                 u32 icode = (CurInstr >> 6) & 0x3FF;
@@ -723,7 +723,7 @@ void ARMv5::Execute()
                 else
                     AddCycles_C();
             }
-
+        }
         // TODO optimize this shit!!!
         if (Halted)
         {
