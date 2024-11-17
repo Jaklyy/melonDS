@@ -454,6 +454,7 @@ void NDS::Reset()
     ARM9Timestamp = 0; ARM9Target = 0;
     ARM7Timestamp = 0; ARM7Target = 0;
     SysTimestamp = 0;
+    MainRAMTimestamp = 0;
 
     InitTimings();
 
@@ -889,6 +890,66 @@ void NDS::RunSystemSleep(u64 timestamp)
     }
 }
 
+void NDS::ResolveMainRAM()
+{
+    bool a7priority = ExMemCnt[0] & 0x8000;
+    if (ARM7.TimingPtr == 0) return;
+
+
+    //if (a7priority)
+    {
+        while (true)
+        {
+            if (ARM7.ClearPtr > ARM7.TimingPtr)
+            {
+                ARM7.TimingPtr = 0;
+                ARM7.ClearPtr = 0;
+                break;
+            }
+
+            u16 block = ARM7.TimingBlocks[ARM7.ClearPtr];
+            if (block & 0xFF00)
+            {
+                while (ARM7.CurCnt < (block & 0xFF))
+                {
+                    if ((ARM7.CurCnt > 0) || (block & 0x4000)) // try to continue burst
+                    {
+                        MainRAMTimestamp += 2;
+                        ARM7Timestamp += 2;
+                    }
+                    else
+                    {
+                        if (ARM7Timestamp < MainRAMTimestamp) ARM7Timestamp = MainRAMTimestamp;
+
+                        if (block & 0x0300) // 8/16 bit
+                        {
+                            MainRAMTimestamp = ARM7Timestamp + 8;
+                            ARM7Timestamp += ((block & 0x04) ? 3 : 5);
+                        }
+                        else
+                        {
+                            MainRAMTimestamp = ARM7Timestamp + 9;
+                            ARM7Timestamp += ((block & 0x04) ? 4 : 6);
+                        }
+                    }
+                    ARM7.CurCnt++;
+                }
+                ARM7.CurCnt = 0;
+                ARM7.ClearPtr++;
+            }
+            else
+            {
+                ARM7Timestamp += block;
+                ARM7.ClearPtr++;
+            }
+        }
+    }
+    //else
+    {
+
+    }
+}
+
 template <CPUExecuteMode cpuMode>
 u32 NDS::RunFrame()
 {
@@ -1007,6 +1068,8 @@ u32 NDS::RunFrame()
                     {
                         ARM7.Execute<cpuMode>();
                     }
+
+                    ResolveMainRAM();
 
                     RunTimers(1);
                 }

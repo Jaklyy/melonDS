@@ -187,6 +187,14 @@ public:
 
     u64 MainRAMTimestamp;
 
+    u16 TimingBlocks[16]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst; 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
+                           * 0xC0 == ICache Stream; 
+                           * lsbs are a counter: if msb set, num main ram fetches; else, num cycles
+                           */
+    u8 TimingPtr;
+    u8 ClearPtr;
+    u8 CurCnt;
+
 #ifdef JIT_ENABLED
     u32 FastBlockLookupStart, FastBlockLookupSize;
     u64* FastBlockLookup;

@@ -193,6 +193,10 @@ void ARM::Reset()
 #endif
 
     MainRAMTimestamp = 0;
+    
+    TimingPtr = 0;
+    ClearPtr = 0;
+    TimingBlocks[0] = 0;
 
     // zorp
     JumpTo(ExceptionBase);
@@ -870,6 +874,16 @@ void ARMv4::Execute()
                     AddCycles_C();
             }
 
+            if (TimingPtr > 0)
+            {
+                break;
+            }
+            else
+            {
+                NDS.ARM7Timestamp += TimingBlocks[0];
+                TimingBlocks[0] = 0;
+            }
+
             // TODO optimize this shit!!!
             if (Halted)
             {
@@ -879,6 +893,7 @@ void ARMv4::Execute()
                 }
                 break;
             }
+
             /*if (NDS::IF[1] & NDS::IE[1])
             {
                 if (NDS::IME[1] & 0x1)
@@ -1231,54 +1246,46 @@ void ARMv5::HandleInterlocksMemory(u8 reg)
 
 u16 ARMv4::CodeRead16(u32 addr)
 {
-    if ((addr >> 24) == 0x02)
+    if ((addr >> 24) == 0x02) // main ram
     {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        TimingBlocks[++TimingPtr] = (Nonseq ? 0x8101 : 0x4101);
+        TimingBlocks[++TimingPtr] = 0;
+
+        return BusRead16(addr);
     }
 
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr>>15][Nonseq?0:1];
-
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 3;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr>>15][Nonseq?0:1];
 
     return BusRead16(addr);
 }
 
 u32 ARMv4::CodeRead32(u32 addr)
 {
-    if ((addr >> 24) == 0x02)
+    if ((addr >> 24) == 0x02) // main ram
     {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        TimingBlocks[++TimingPtr] = (Nonseq ? 0x8001 : 0x4001);
+        TimingBlocks[++TimingPtr] = 0;
+
+        return BusRead32(addr);
     }
 
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr>>15][Nonseq?2:3];
-
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 3;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr>>15][Nonseq?2:3];
 
     return BusRead32(addr);
 }
 
 bool ARMv4::DataRead8(u32 addr, u32* val)
 {
-    if ((addr >> 24) == 0x02)
+    if ((addr >> 24) == 0x02) // main ram
     {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        TimingBlocks[++TimingPtr] = 0x8200;
+        TimingBlocks[++TimingPtr] = 0;
+
+        *val = BusRead8(addr);
+        return true;
     }
     
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr >> 15][0];
-    
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 3;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr >> 15][0];
 
     *val = BusRead8(addr);
     return true;
@@ -1288,18 +1295,16 @@ bool ARMv4::DataRead16(u32 addr, u32* val)
 {
     addr &= ~1;
     
-    if ((addr >> 24) == 0x02)
+    if ((addr >> 24) == 0x02) // main ram
     {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        TimingBlocks[++TimingPtr] = 0x8101;
+        TimingBlocks[++TimingPtr] = 0;
+
+        *val = BusRead16(addr);
+        return true;
     }
     
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr >> 15][0];
-    
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 3;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr >> 15][0];
 
     *val = BusRead16(addr);
     return true;
@@ -1309,18 +1314,16 @@ bool ARMv4::DataRead32(u32 addr, u32* val)
 {
     addr &= ~3;
     
-    if ((addr >> 24) == 0x02)
+    if ((addr >> 24) == 0x02) // main ram
     {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        TimingBlocks[++TimingPtr] = 0x8001;
+        TimingBlocks[++TimingPtr] = 0;
+
+        *val = BusRead32(addr);
+        return true;
     }
     
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr >> 15][2];
-    
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 3;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr >> 15][2];
 
     *val = BusRead32(addr);
     return true;
@@ -1330,18 +1333,15 @@ bool ARMv4::DataRead32S(u32 addr, u32* val)
 {
     addr &= ~3;
     
-    if ((addr >> 24) == 0x02)
+    if ((addr >> 24) == 0x02) // main ram
     {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        TimingBlocks[TimingPtr-1] += 1;
+
+        *val = BusRead32(addr);
+        return true;
     }
     
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr >> 15][3];
-    
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 3;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr >> 15][3];
 
     *val = BusRead32(addr);
     return true;
@@ -1349,18 +1349,16 @@ bool ARMv4::DataRead32S(u32 addr, u32* val)
 
 bool ARMv4::DataWrite8(u32 addr, u8 val)
 {
-    if ((addr >> 24) == 0x02)
+    if ((addr >> 24) == 0x02) // main ram
     {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        TimingBlocks[++TimingPtr] = 0x8601;
+        TimingBlocks[++TimingPtr] = 0;
+
+        BusWrite8(addr, val);
+        return true;
     }
     
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr >> 15][0];
-    
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 5;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr >> 15][0];
 
     BusWrite8(addr, val);
     return true;
@@ -1370,18 +1368,16 @@ bool ARMv4::DataWrite16(u32 addr, u16 val)
 {
     addr &= ~1;
     
-    if ((addr >> 24) == 0x02)
+    if ((addr >> 24) == 0x02) // main ram
     {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        TimingBlocks[++TimingPtr] = 0x8501;
+        TimingBlocks[++TimingPtr] = 0;
+
+        BusWrite16(addr, val);
+        return true;
     }
     
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr >> 15][0];
-    
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 5;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr >> 15][0];
 
     BusWrite16(addr, val);
     return true;
@@ -1390,19 +1386,17 @@ bool ARMv4::DataWrite16(u32 addr, u16 val)
 bool ARMv4::DataWrite32(u32 addr, u32 val)
 {
     addr &= ~3;
+    
+    if ((addr >> 24) == 0x02) // main ram
+    {
+        TimingBlocks[++TimingPtr] = 0x8401;
+        TimingBlocks[++TimingPtr] = 0;
 
-    if ((addr >> 24) == 0x02)
-    {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        BusWrite32(addr, val);
+        return true;
     }
     
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr >> 15][2];
-    
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 5;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr >> 15][2];
 
     BusWrite32(addr, val);
     return true;
@@ -1411,19 +1405,16 @@ bool ARMv4::DataWrite32(u32 addr, u32 val)
 bool ARMv4::DataWrite32S(u32 addr, u32 val)
 {
     addr &= ~3;
+    
+    if ((addr >> 24) == 0x02) // main ram
+    {
+        TimingBlocks[TimingPtr-1] += 1;
 
-    if ((addr >> 24) == 0x02)
-    {
-        if (NDS.ARM7Timestamp < MainRAMTimestamp) NDS.ARM7Timestamp = MainRAMTimestamp;
+        BusWrite32(addr, val);
+        return true;
     }
     
-    NDS.ARM7Timestamp += NDS.ARM7MemTimings[addr >> 15][3];
-    
-    if ((addr >> 24) == 0x02)
-    {
-        MainRAMTimestamp = NDS.ARM7Timestamp;
-        NDS.ARM7Timestamp -= 5;
-    }
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr >> 15][3];
 
     BusWrite32(addr, val);
     return true;
@@ -1439,7 +1430,7 @@ void ARMv4::AddCycles_C()
 void ARMv4::AddCycles_CI(s32 num)
 {
     // code+internal. results in a nonseq code fetch.
-    NDS.ARM7Timestamp += num;
+    TimingBlocks[TimingPtr] += num;
 
     Nonseq = true;
 }
@@ -1447,7 +1438,7 @@ void ARMv4::AddCycles_CI(s32 num)
 void ARMv4::AddCycles_CDI()
 {
     // LDR/LDM cycles.
-    NDS.ARM7Timestamp += 1;
+    TimingBlocks[TimingPtr] += 1;
 
     Nonseq = true;
 }
