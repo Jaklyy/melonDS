@@ -196,6 +196,7 @@ void ARM::Reset()
     
     TimingPtr = 0;
     ClearPtr = 0;
+    CurCnt = 0;
     TimingBlocks[0] = 0;
 
     // zorp
@@ -206,6 +207,7 @@ void ARMv5::Reset()
 {
     PU_Map = PU_PrivMap;
     Store = false;
+    MainRAMAccess = false;
     
     ITCMTimestamp = 0;
     TimestampActual = 0;
@@ -213,7 +215,11 @@ void ARMv5::Reset()
     ILPrevReg = 16;
 
     ICacheFillPtr = 7;
+    ICStreamProgMR = 0;
+    ICStreamBorkMR = false;
     DCacheFillPtr = 7;
+    ICacheStreamMainRAM = false;
+    DCacheStreamMainRAM = false;
 
     WBWritePointer = 16;
     WBFillPointer = 0;
@@ -335,9 +341,28 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
     // thus it requires waiting for the current ICache line fill to complete before continuing
     if (ICacheFillPtr < 7)
     {
-        u64 fillend = ICacheFillTimes[6] + 1;
-        if (NDS.ARM9Timestamp < fillend) NDS.ARM9Timestamp = fillend;
-        ICacheFillPtr = 7;
+        if (ICacheStreamMainRAM)
+        {
+            s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
+            TimingBlocks[++TimingPtr] = 0xC100 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0;
+
+            for (int i = 0; i < 7; i++)
+            {
+                ICacheFillTimes[i] -= curtime;
+                DCacheFillTimes[i] -= curtime;
+            }
+            TimestampActual -= curtime;
+            WBTimestamp -= curtime;
+            WBInitialTS -= curtime;
+            ICacheFillPtr = 7;
+        }
+        else
+        {
+            s64 fillend = ICacheFillTimes[6] + 1;
+            if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend;
+            ICacheFillPtr = 7;
+        }
     }
 
     if (addr & 0x1)
@@ -734,6 +759,67 @@ void ARMv5::Execute()
                     AddCycles_C();
             }
 
+            if (TimingPtr > 0)
+            {
+                //if (TimingBlocks[TimingPtr] == 0xFFFC) TimingBlocks[TimingPtr] = 0;
+                for (int i = 0; i < 7; i++)
+                {
+                    ICacheFillTimes[i] -= TimingBlocks[TimingPtr];
+                    DCacheFillTimes[i] -= TimingBlocks[TimingPtr];
+                }
+                TimestampActual -= TimingBlocks[TimingPtr];
+                WBTimestamp -= TimingBlocks[TimingPtr];
+                WBInitialTS -= TimingBlocks[TimingPtr];
+
+                if (TimingBlocks[TimingPtr] > 0xFF)
+                {
+                    printf("R9C %i %08X\n", TimingBlocks[TimingPtr], CurInstr);
+                    printf("%lli %lli %lli %lli %lli %i\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS, TimingPtr);
+
+                    for(int i = 0; i <= TimingPtr; i++) printf("%04X ", TimingBlocks[i]);
+
+                    printf("\n");
+                }
+                /*
+                if ((DCacheStreamMainRAM) && (DCacheFillPtr != 7) && (DCacheFillTimes[DCacheFillPtr] <= 0))
+                {
+
+                }*/
+
+                WriteBufferCheck<false>();
+
+                break;
+            }
+            else
+            {
+                if (TimingBlocks[0] > 0xFF)
+                {
+                    printf("%lli %lli %lli %lli %lli\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS);
+                }
+                NDS.ARM9Timestamp += TimingBlocks[0];
+                for (int i = 0; i < 7; i++)
+                {
+                    ICacheFillTimes[i] -= TimingBlocks[0];
+                    DCacheFillTimes[i] -= TimingBlocks[0];
+                }
+                TimestampActual -= TimingBlocks[0];
+                WBTimestamp -= TimingBlocks[0];
+                WBInitialTS -= TimingBlocks[0];
+                
+                if (TimingBlocks[0] > 0xFF)
+                {
+                    printf("R90 %i %08X\n", TimingBlocks[0], CurInstr);
+                    printf("%lli %lli %lli %lli %lli\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS);
+
+                    for(int i = 0; i <= TimingPtr; i++) printf("%04X ", TimingBlocks[i]);
+
+                    printf("\n");
+                }
+
+                TimingBlocks[0] = 0;
+                WriteBufferCheck<false>();
+            }
+
             // TODO optimize this shit!!!
             if (Halted)
             {
@@ -753,7 +839,6 @@ void ARMv5::Execute()
         //NDS.ARM9Timestamp += Cycles;
         //Cycles = 0;
     }
-    WriteBufferCheck<false>();
 
     if (Halted == 2)
         Halted = 0;
@@ -1176,8 +1261,8 @@ void ARMv5::CodeFetch()
         // the value we need is cached by the bus
         // in practice we can treat this as a 1 cycle fetch, with no penalties
         NextInstr[1] >>= 16;
-        NDS.ARM9Timestamp++;
-        if (NDS.ARM9Timestamp < TimestampActual) NDS.ARM9Timestamp = TimestampActual;
+        TimingBlocks[TimingPtr]++;
+        if (TimingBlocks[TimingPtr] < TimestampActual) TimingBlocks[TimingPtr] = TimestampActual;
         Store = false;
         DataRegion = Mem9_Null;
     }
@@ -1187,21 +1272,22 @@ void ARMv5::CodeFetch()
 void ARMv5::AddCycles_CI(s32 numX)
 {
     CodeFetch();
-    NDS.ARM9Timestamp += numX;
+    TimingBlocks[TimingPtr] += numX;
 }
 
 void ARMv5::AddCycles_MW(s32 numM)
 {
-    TimestampActual = numM + NDS.ARM9Timestamp;
+    TimestampActual = numM + TimingBlocks[TimingPtr];
 
     numM -= 3<<NDS.ARM9ClockShift;
 
-    if (numM > 0) NDS.ARM9Timestamp += numM;
+    if (numM > 0) TimingBlocks[TimingPtr] += numM;
 }
 
 template <bool bitfield>
 void ARMv5::HandleInterlocksExecute(u16 ilmask, u8* times)
 {
+    /*
     if ((bitfield && (ilmask & (1<<ILCurrReg))) || (!bitfield && (ilmask == ILCurrReg)))
     {
         u64 time = ILCurrTime - (times ? times[ILCurrReg] : 0);
@@ -1229,19 +1315,20 @@ void ARMv5::HandleInterlocksExecute(u16 ilmask, u8* times)
 
     ILPrevReg = ILCurrReg;
     ILPrevTime = ILCurrTime;
-    ILCurrReg = 16;
+    ILCurrReg = 16;*/
 }
 template void ARMv5::HandleInterlocksExecute<true>(u16 ilmask, u8* times);
 template void ARMv5::HandleInterlocksExecute<false>(u16 ilmask, u8* times);
 
 void ARMv5::HandleInterlocksMemory(u8 reg)
 {
+    /*
     if ((reg != ILPrevReg) || (NDS.ARM9Timestamp >= ILPrevTime)) return;
     
     u64 diff = ILPrevTime - NDS.ARM9Timestamp; // should always be 1?
     NDS.ARM9Timestamp = ILPrevTime;
     ITCMTimestamp += diff; // checkme
-    ILPrevTime = 16;
+    ILPrevTime = 16;*/
 }
 
 u16 ARMv4::CodeRead16(u32 addr)

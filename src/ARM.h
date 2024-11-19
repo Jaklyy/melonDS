@@ -187,9 +187,12 @@ public:
 
     u64 MainRAMTimestamp;
 
-    u16 TimingBlocks[16]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst; 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
-                           * 0xC0 == ICache Stream; 
+    u16 TimingBlocks[32]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst; 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
                            * lsbs are a counter: if msb set, num main ram fetches; else, num cycles
+                           * 0xC0 == ICache Stream Fetch; 0xC1 == Instruction NS Flush; 0xC2 == Data Access Flush;
+                           * 0xC3 == ICache Stream Start; lsb used for what point it begins;
+                           * 0x20 == DCache variants of above;
+                           * 0x01 == MemoryStage wait;
                            */
     u8 TimingPtr;
     u8 ClearPtr;
@@ -672,10 +675,11 @@ public:
     bool (*GetMemRegion)(u32 addr, bool write, MemRegion* region);
     
     u64 ITCMTimestamp;
-    u64 TimestampActual;
+    s64 TimestampActual;
     u32 PC;
     bool NullFetch;
     bool Store;
+    bool MainRAMAccess;
 
     u8 ILCurrReg;
     u8 ILPrevReg;
@@ -684,8 +688,12 @@ public:
 
     u8 ICacheFillPtr;
     u8 DCacheFillPtr;
-    u64 ICacheFillTimes[7];
-    u64 DCacheFillTimes[7];
+    bool ICacheStreamMainRAM;
+    u8 ICStreamProgMR;
+    bool ICStreamBorkMR;
+    bool DCacheStreamMainRAM;
+    s64 ICacheFillTimes[7];
+    s64 DCacheFillTimes[7];
 
     u8 WBWritePointer; // which entry to attempt to write next; should always be ANDed with 0xF after incrementing
     u8 WBFillPointer; // where the next entry should be added; should always be ANDed with 0xF after incrementing
@@ -694,12 +702,12 @@ public:
     u64 WBCurVal; // current value being written; 0-31: val | 61-63: flag; 0 = byte ns; 1 = halfword ns; 2 = word ns; 3 = word s; 4 = address (invalid in this variable)
     u32 storeaddr[16]; // temp until i figure out why using the fifo address entries directly didn't work
     u64 WriteBufferFifo[16]; // 0-31: val | 61-63: flag; 0 = byte ns; 1 = halfword ns; 2 = word ns; 3 = word s; 4 = address
-    u64 WBTimestamp; // current timestamp
+    s64 WBTimestamp; // current timestamp
     //u64 WBMainRAMDelay; // timestamp used to emulate the delay before the next main ram write can begin
     u64 WBDelay; // timestamp in bus cycles use for the delay before next write to the write buffer can occur (seems to be a 1 cycle delay after a write to it)
     u32 WBLastRegion; // the last region written to by the write buffer
-    u64 WBReleaseTS; // the timestamp on which the write buffer relinquished control of the bus back
-    u64 WBInitialTS; // what cycle the entry was first sent in
+    s64 WBReleaseTS; // the timestamp on which the write buffer relinquished control of the bus back
+    s64 WBInitialTS; // what cycle the entry was first sent in
 
 #ifdef GDBSTUB_ENABLED
     u32 ReadMem(u32 addr, int size) override;

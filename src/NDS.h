@@ -268,6 +268,8 @@ public: // TODO: Encapsulate the rest of these members
 
     u16 ExMemCnt[2];
     u64 MainRAMTimestamp;
+    bool MainRAMLastAccess; // 0 == 9; 1 == 7
+
     alignas(u32) u8 ROMSeed0[2*8];
     alignas(u32) u8 ROMSeed1[2*8];
 
@@ -478,6 +480,7 @@ public: // TODO: Encapsulate the rest of these members
     virtual void ARM7IOWrite32(u32 addr, u32 val);
 
     void ResolveMainRAM();
+    void RunCycles(ARM* cpu, u64* ts);
 
 #ifdef JIT_ENABLED
     [[nodiscard]] bool IsJITEnabled() const noexcept { return EnableJIT; }

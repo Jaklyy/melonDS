@@ -455,6 +455,7 @@ void NDS::Reset()
     ARM7Timestamp = 0; ARM7Target = 0;
     SysTimestamp = 0;
     MainRAMTimestamp = 0;
+    MainRAMLastAccess = false;
 
     InitTimings();
 
@@ -890,64 +891,525 @@ void NDS::RunSystemSleep(u64 timestamp)
     }
 }
 
+void NDS::RunCycles(ARM* cpu, u64* ts)
+{
+    u16 block = cpu->TimingBlocks[cpu->ClearPtr];
+    while ((cpu->ClearPtr <= cpu->TimingPtr) && (!(block & 0xFF00)))
+    {
+        *ts += block;
+        block = cpu->TimingBlocks[++cpu->ClearPtr];
+    }
+
+    if (cpu->ClearPtr > cpu->TimingPtr)
+    {
+        cpu->ClearPtr = 0;
+        cpu->TimingPtr = 0;
+        cpu->TimingBlocks[0] = 0;
+    }
+    //if (*ts < MainRAMTimestamp) *ts = MainRAMTimestamp; // i think this is wrong
+}
+
 void NDS::ResolveMainRAM()
 {
-    bool a7priority = ExMemCnt[0] & 0x8000;
-    if (ARM7.TimingPtr == 0) return;
+    if (ARM7.TimingPtr == 0 && ARM9.TimingPtr == 0) return;
+    //printf("S %lli %lli\n", ARM9Timestamp, ARM7Timestamp << ARM9ClockShift);
+    if (ARM9.TimingPtr != 0) RunCycles(&ARM9, &ARM9Timestamp);
+    if (ARM7.TimingPtr != 0) RunCycles(&ARM7, &ARM7Timestamp);
+    
+    u64 a9ts;
 
-
-    //if (a7priority)
+    if (ARM9.TimingPtr != 0)
     {
-        while (true)
+        u16 block = ARM9.TimingBlocks[ARM9.ClearPtr];
+
+        switch (block >> 8)
         {
-            if (ARM7.ClearPtr > ARM7.TimingPtr)
+            case 0xC0:
+            case 0xC1:
+            case 0xC2:
             {
-                ARM7.TimingPtr = 0;
-                ARM7.ClearPtr = 0;
+                a9ts = ARM9Timestamp + (s8)block - (2<<ARM9ClockShift);
                 break;
             }
-
-            u16 block = ARM7.TimingBlocks[ARM7.ClearPtr];
-            if (block & 0xFF00)
+            default:
+                //printf("CRYING1 %04X\n", block);
+            case 0xC3:
             {
-                while (ARM7.CurCnt < (block & 0xFF))
-                {
-                    if ((ARM7.CurCnt > 0) || (block & 0x4000)) // try to continue burst
-                    {
-                        MainRAMTimestamp += 2;
-                        ARM7Timestamp += 2;
-                    }
-                    else
-                    {
-                        if (ARM7Timestamp < MainRAMTimestamp) ARM7Timestamp = MainRAMTimestamp;
-
-                        if (block & 0x0300) // 8/16 bit
-                        {
-                            MainRAMTimestamp = ARM7Timestamp + 8;
-                            ARM7Timestamp += ((block & 0x04) ? 3 : 5);
-                        }
-                        else
-                        {
-                            MainRAMTimestamp = ARM7Timestamp + 9;
-                            ARM7Timestamp += ((block & 0x04) ? 4 : 6);
-                        }
-                    }
-                    ARM7.CurCnt++;
-                }
-                ARM7.CurCnt = 0;
-                ARM7.ClearPtr++;
-            }
-            else
-            {
-                ARM7Timestamp += block;
-                ARM7.ClearPtr++;
+                a9ts = ARM9Timestamp;
+                break;
             }
         }
     }
-    //else
-    {
+    else a9ts = ARM9Timestamp;
 
+    //printf("mr %lli, %lli\n", (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift, ARM7Timestamp);
+
+    bool a7priority = ExMemCnt[0] & 0x8000;
+    if (a7priority)
+    {
+        while (((ARM7.TimingPtr != 0) && (ARM7Timestamp <= ((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))) ||
+               ((ARM9.TimingPtr != 0) && (((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) < ARM7Timestamp)))
+        {
+            if (ARM7.TimingPtr != 0)
+            {
+                while (ARM7Timestamp <= ((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))
+                {
+                    u16 block = ARM7.TimingBlocks[ARM7.ClearPtr];
+                    if (block >> 8)
+                    {
+                        while (ARM7.CurCnt < (block & 0xFF))
+                        {
+                            if (((ARM7.CurCnt > 0) || (block & 0x4000)) && MainRAMLastAccess) // try to continue burst
+                            {
+                                if (block & 0x0300)
+                                {
+                                    MainRAMTimestamp += 1;
+                                    ARM7Timestamp += 1;
+                                }
+                                else
+                                {
+                                    MainRAMTimestamp += 2;
+                                    ARM7Timestamp += 2;
+                                }
+                            }
+                            else
+                            {
+                                if (ARM7Timestamp < MainRAMTimestamp) ARM7Timestamp = MainRAMTimestamp;
+
+                                if (block & 0x0300) // 8/16 bit
+                                {
+                                    MainRAMTimestamp = ARM7Timestamp + 8;
+                                    ARM7Timestamp += ((block & 0x04) ? 3 : 5);
+                                    MainRAMLastAccess = 1;
+                                }
+                                else
+                                {
+                                    MainRAMTimestamp = ARM7Timestamp + 9;
+                                    ARM7Timestamp += ((block & 0x04) ? 4 : 6);
+                                    MainRAMLastAccess = 1;
+                                }
+                            }
+                            ARM7.CurCnt++;
+                        }
+                        if ((ARM9.TimingPtr != 0) && (((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) < ARM7Timestamp)) a9ts = ARM7Timestamp << ARM9ClockShift;
+                        ARM7.CurCnt = 0;
+                        ARM7.ClearPtr++;
+                    }
+                    else
+                    {
+                        ARM7Timestamp += block;
+                        ARM7.ClearPtr++;
+                    }
+                    if (ARM7.ClearPtr > ARM7.TimingPtr)
+                    {
+                        ARM7.ClearPtr = 0;
+                        ARM7.TimingPtr = 0;
+                        ARM9.TimingBlocks[0] = 0;
+                        break;
+                    }
+                }
+                if (ARM7.TimingPtr != 0) RunCycles(&ARM7, &ARM7Timestamp);
+            }
+            
+            if (ARM9.TimingPtr != 0)
+            {
+                //printf ("a9 %lli %04X, a7 %lli\n", (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift, ARM9.TimingBlocks[ARM9.ClearPtr], ARM7Timestamp);
+                while (((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) < ARM7Timestamp)
+                {
+                    u16 oldptr = ARM9.ClearPtr;
+                    u16 block = ARM9.TimingBlocks[ARM9.ClearPtr];
+                    switch (block >> 8)
+                    {
+                        case 0x00:
+                        {
+                            //a9ts += block;
+                            ARM9.ClearPtr++;
+                            break;
+                        }
+                        case 0xC0:
+                        {
+                            if (ARM9.ICStreamProgMR == 0) { /*printf("%04X ????\n", block);*/ ARM9.ClearPtr++; break; }
+                            if (!MainRAMLastAccess)
+                            {
+                                a9ts += 2 << ARM9ClockShift;
+                                MainRAMTimestamp += 2;
+                            }
+                            else
+                            {
+                                if (a9ts < MainRAMTimestamp << ARM9ClockShift) a9ts = MainRAMTimestamp << ARM9ClockShift;
+                                a9ts += 9 << ARM9ClockShift;
+                                MainRAMTimestamp = (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                                MainRAMLastAccess = 0;
+                            }
+                            ARM9.ICStreamProgMR++;
+                            ARM9.ClearPtr++;
+                            if (ARM9.ICStreamProgMR >= 8)
+                            {
+                                ARM9.ICStreamProgMR = 0;
+                            }
+                            break;
+                        }
+                        case 0xC1:
+                        {
+                            if (ARM9.ICStreamProgMR == 0) { /*printf("%04X ????\n", block);*/ ARM9.ClearPtr++; break; }
+                            if (!MainRAMLastAccess)
+                            {
+                                a9ts += 2 << ARM9ClockShift;
+                                MainRAMTimestamp += 2;
+                            }
+                            else
+                            {
+                                if (a9ts < MainRAMTimestamp << ARM9ClockShift) a9ts = MainRAMTimestamp << ARM9ClockShift;
+                                a9ts += 9 << ARM9ClockShift;
+                                MainRAMTimestamp = (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                                MainRAMLastAccess = 0;
+                            }
+                            ARM9.ICStreamProgMR++;
+                            if (ARM9.ICStreamProgMR >= 8)
+                            {
+                                ARM9.ClearPtr++;
+                                ARM9.ICStreamProgMR = 0;
+                                a9ts += 1;
+                            }
+                            break;
+                        }
+                        case 0xC2:
+                        {
+                            if (ARM9.ICStreamProgMR == 0) { /*printf("%04X ????\n", block);*/ ARM9.ClearPtr++; break; }
+                            if (!MainRAMLastAccess)
+                            {
+                                a9ts += 2 << ARM9ClockShift;
+                                MainRAMTimestamp += 2;
+                            }
+                            else
+                            {
+                                if (a9ts < MainRAMTimestamp << ARM9ClockShift) a9ts = MainRAMTimestamp << ARM9ClockShift;
+                                a9ts += 9 << ARM9ClockShift;
+                                MainRAMTimestamp = (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                                MainRAMLastAccess = 0;
+                            }
+                            ARM9.ICStreamProgMR++;
+                            if (ARM9.ICStreamProgMR >= 8)
+                            {
+                                ARM9.ClearPtr++;
+                                ARM9.ICStreamProgMR = 0;
+                                a9ts -= 6;
+                            }
+                            break;
+                        }
+                        case 0xC3:
+                        {
+                            if ((!MainRAMLastAccess) && (ARM9.ICStreamProgMR > 0))
+                            {
+                                a9ts += 2 << ARM9ClockShift;
+                                MainRAMTimestamp += 2;
+                            }
+                            else
+                            {
+                                if (a9ts < MainRAMTimestamp << ARM9ClockShift) a9ts = MainRAMTimestamp << ARM9ClockShift;
+                                a9ts += 9 << ARM9ClockShift;
+                                MainRAMTimestamp = (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                                MainRAMLastAccess = 0;
+                            }
+                            ARM9.ICStreamProgMR++;
+                            if (ARM9.ICStreamProgMR >= (block & 0xFF))
+                            {
+                                ARM9.ClearPtr++;
+                                if (ARM9.ICStreamProgMR >= 8) ARM9.ICStreamProgMR = 0;
+                            }
+                            break;
+                        }
+                        default:
+                            //printf("CRYING2 %04X\n", block);
+                            ARM9.ClearPtr++;
+                            break;
+                    }
+                    
+                    if (ARM9.ClearPtr > ARM9.TimingPtr)
+                    {
+                        ARM9.ClearPtr = 0;
+                        ARM9.TimingPtr = 0;
+                        ARM9.TimingBlocks[0] = 0;
+                        break;
+                    }
+
+                    if ((ARM7.TimingPtr != 0) && (((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = ((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift);
+                    if (a9ts > ARM9Timestamp) ARM9Timestamp = a9ts;
+
+                    if ((oldptr != ARM9.ClearPtr) && (ARM9.ClearPtr != 0))
+                    {
+                        RunCycles(&ARM9, &ARM9Timestamp);
+                        if (ARM9.ClearPtr == 0)
+                        {
+                            a9ts = ARM9Timestamp;
+                        }
+                        else
+                        {
+                            block = ARM9.TimingBlocks[ARM9.ClearPtr];
+                            switch (block >> 8)
+                            {
+                                case 0xC0:
+                                case 0xC1:
+                                case 0xC2:
+                                {
+                                    a9ts = ARM9Timestamp + (s8)block - (2<<ARM9ClockShift);
+                                    break;
+                                }
+                                default:
+                                    //printf("CRYING3 %04X\n", block);
+                                case 0xC3:
+                                {
+                                    a9ts = ARM9Timestamp;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (ARM9.TimingPtr != 0) RunCycles(&ARM9, &ARM9Timestamp);
+            }
+        }
     }
+    else
+    {
+        while (((ARM7.TimingPtr != 0) && (ARM7Timestamp < ((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))) ||
+               ((ARM9.TimingPtr != 0) && (((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) <= ARM7Timestamp)))
+        {
+            if (ARM9.TimingPtr != 0)
+            {
+                //printf ("a9 %lli %04X, a7 %lli\n", (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift, ARM9.TimingBlocks[ARM9.ClearPtr], ARM7Timestamp);
+                while (((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) <= ARM7Timestamp)
+                {
+                    u16 oldptr = ARM9.ClearPtr;
+                    u16 block = ARM9.TimingBlocks[ARM9.ClearPtr];
+                    switch (block >> 8)
+                    {
+                        case 0x00:
+                        {
+                            //a9ts += block;
+                            ARM9.ClearPtr++;
+                            break;
+                        }
+                        case 0xC0:
+                        {
+                            if (ARM9.ICStreamProgMR == 0) { /*printf("%04X ????\n", block);*/ ARM9.ClearPtr++; break; }
+                            if (!MainRAMLastAccess)
+                            {
+                                a9ts += 2 << ARM9ClockShift;
+                                MainRAMTimestamp += 2;
+                            }
+                            else
+                            {
+                                if (a9ts < MainRAMTimestamp << ARM9ClockShift) a9ts = MainRAMTimestamp << ARM9ClockShift;
+                                a9ts += 9 << ARM9ClockShift;
+                                MainRAMTimestamp = (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                                MainRAMLastAccess = 0;
+                            }
+                            ARM9.ICStreamProgMR++;
+                            if (ARM9.ICStreamBorkMR || (ARM9Timestamp > a9ts)) 
+                            {
+                                ARM9.ICStreamBorkMR = true;
+                                if (ARM9.ICStreamProgMR >= 8)
+                                {
+                                    ARM9.ICStreamProgMR = 0;
+                                    ARM9.ClearPtr++;
+                                    a9ts += 1;
+                                    ARM9.ICacheFillPtr = 7;
+                                }
+                            }
+                            else
+                            {
+                                ARM9.ClearPtr++;
+                                if (ARM9.ICStreamProgMR >= 8)
+                                {
+                                    ARM9.ICStreamProgMR = 0;
+                                }
+                            }
+                            break;
+                        }
+                        case 0xC1:
+                        {
+                            if (ARM9.ICStreamProgMR == 0) { /*printf("%04X ????\n", block);*/ ARM9.ClearPtr++; break; }
+                            if (!MainRAMLastAccess)
+                            {
+                                a9ts += 2 << ARM9ClockShift;
+                                MainRAMTimestamp += 2;
+                            }
+                            else
+                            {
+                                if (a9ts < MainRAMTimestamp << ARM9ClockShift) a9ts = MainRAMTimestamp << ARM9ClockShift;
+                                a9ts += 9 << ARM9ClockShift;
+                                MainRAMTimestamp = (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                                MainRAMLastAccess = 0;
+                            }
+                            ARM9.ICStreamProgMR++;
+                            if (ARM9.ICStreamProgMR >= 8)
+                            {
+                                ARM9.ClearPtr++;
+                                ARM9.ICStreamProgMR = 0;
+                                a9ts += 1;
+                            }
+                            break;
+                        }
+                        case 0xC2:
+                        {
+                            if (ARM9.ICStreamProgMR == 0) { /*printf("%04X ????\n", block);*/ ARM9.ClearPtr++; break; }
+                            if (!MainRAMLastAccess)
+                            {
+                                a9ts += 2 << ARM9ClockShift;
+                                MainRAMTimestamp += 2;
+                            }
+                            else
+                            {
+                                if (a9ts < MainRAMTimestamp << ARM9ClockShift) a9ts = MainRAMTimestamp << ARM9ClockShift;
+                                a9ts += 9 << ARM9ClockShift;
+                                MainRAMTimestamp = (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                                MainRAMLastAccess = 0;
+                            }
+                            ARM9.ICStreamProgMR++;
+                            if (ARM9.ICStreamProgMR >= 8)
+                            {
+                                ARM9.ClearPtr++;
+                                ARM9.ICStreamProgMR = 0;
+                                a9ts -= 6;
+                            }
+                            break;
+                        }
+                        case 0xC3:
+                        {
+                            if ((!MainRAMLastAccess) && (ARM9.ICStreamProgMR > 0))
+                            {
+                                a9ts += 2 << ARM9ClockShift;
+                                MainRAMTimestamp += 2;
+                            }
+                            else
+                            {
+                                if (a9ts < MainRAMTimestamp << ARM9ClockShift) a9ts = MainRAMTimestamp << ARM9ClockShift;
+                                a9ts += 9 << ARM9ClockShift;
+                                MainRAMTimestamp = (a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                                MainRAMLastAccess = 0;
+                            }
+                            ARM9.ICStreamProgMR++;
+                            if (ARM9.ICStreamProgMR >= (block & 0xFF))
+                            {
+                                ARM9.ClearPtr++;
+                                if (ARM9.ICStreamProgMR >= 8) ARM9.ICStreamProgMR = 0;
+                            }
+                            break;
+                        }
+                        default:
+                            //printf("CRYING2 %04X\n", block);
+                            ARM9.ClearPtr++;
+                            break;
+                    }
+                    
+                    if (ARM9.ClearPtr > ARM9.TimingPtr)
+                    {
+                        ARM9.ClearPtr = 0;
+                        ARM9.TimingPtr = 0;
+                        ARM9.TimingBlocks[0] = 0;
+                        break;
+                    }
+
+                    if ((ARM7.TimingPtr != 0) && (((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = ((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift);
+                    if (a9ts > ARM9Timestamp) ARM9Timestamp = a9ts;
+
+                    if ((oldptr != ARM9.ClearPtr) && (ARM9.ClearPtr != 0))
+                    {
+                        RunCycles(&ARM9, &ARM9Timestamp);
+                        if (ARM9.ClearPtr == 0)
+                        {
+                            a9ts = ARM9Timestamp;
+                        }
+                        else
+                        {
+                            block = ARM9.TimingBlocks[ARM9.ClearPtr];
+                            switch (block >> 8)
+                            {
+                                case 0xC0:
+                                case 0xC1:
+                                case 0xC2:
+                                {
+                                    a9ts = ARM9Timestamp + (s8)block - (2<<ARM9ClockShift);
+                                    break;
+                                }
+                                default:
+                                    //printf("CRYING3 %04X\n", block);
+                                case 0xC3:
+                                {
+                                    a9ts = ARM9Timestamp;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (ARM9.TimingPtr != 0) RunCycles(&ARM9, &ARM9Timestamp);
+            }
+
+            if (ARM7.TimingPtr != 0)
+            {
+                while (ARM7Timestamp < ((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))
+                {
+                    u16 block = ARM7.TimingBlocks[ARM7.ClearPtr];
+                    if (block >> 8)
+                    {
+                        while (ARM7.CurCnt < (block & 0xFF))
+                        {
+                            if (((ARM7.CurCnt > 0) || (block & 0x4000)) && MainRAMLastAccess) // try to continue burst
+                            {
+                                if (block & 0x0300)
+                                {
+                                    MainRAMTimestamp += 1;
+                                    ARM7Timestamp += 1;
+                                }
+                                else
+                                {
+                                    MainRAMTimestamp += 2;
+                                    ARM7Timestamp += 2;
+                                }
+                            }
+                            else
+                            {
+                                if (ARM7Timestamp < MainRAMTimestamp) ARM7Timestamp = MainRAMTimestamp;
+
+                                if (block & 0x0300) // 8/16 bit
+                                {
+                                    MainRAMTimestamp = ARM7Timestamp + 8;
+                                    ARM7Timestamp += ((block & 0x04) ? 3 : 5);
+                                    MainRAMLastAccess = 1;
+                                }
+                                else
+                                {
+                                    MainRAMTimestamp = ARM7Timestamp + 9;
+                                    ARM7Timestamp += ((block & 0x04) ? 4 : 6);
+                                    MainRAMLastAccess = 1;
+                                }
+                            }
+                            ARM7.CurCnt++;
+                        }
+                        if ((ARM9.TimingPtr != 0) && (((a9ts + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) < ARM7Timestamp)) a9ts = ARM7Timestamp << ARM9ClockShift;
+                        ARM7.CurCnt = 0;
+                        ARM7.ClearPtr++;
+                    }
+                    else
+                    {
+                        ARM7Timestamp += block;
+                        ARM7.ClearPtr++;
+                    }
+                    if (ARM7.ClearPtr > ARM7.TimingPtr)
+                    {
+                        ARM7.ClearPtr = 0;
+                        ARM7.TimingPtr = 0;
+                        ARM9.TimingBlocks[0] = 0;
+                        break;
+                    }
+                }
+                if (ARM7.TimingPtr != 0) RunCycles(&ARM7, &ARM7Timestamp);
+            }
+        }
+    }
+    //printf("E %lli %lli\n", ARM9Timestamp, ARM7Timestamp << ARM9ClockShift);
 }
 
 template <CPUExecuteMode cpuMode>
@@ -1009,48 +1471,55 @@ u32 NDS::RunFrame()
                 ARM9Target = target << ARM9ClockShift;
                 CurCPU = 0;
 
-                if (CPUStop & CPUStop_GXStall)
+                //while (ARM9Timestamp < ARM9Target && ARM9.TimingPtr == 0)
                 {
-                    // GXFIFO stall
-                    s32 cycles = GPU.GPU3D.CyclesToRunFor();
-
-                    ARM9Timestamp = std::min(ARM9Target, ARM9Timestamp+(cycles<<ARM9ClockShift));
-                }
-                else if (CPUStop & CPUStop_DMA9)
-                {
-                    u64 ts = ARM9Timestamp;
-                    DMAs[0].Run();
-                    if (!(CPUStop & CPUStop_GXStall)) DMAs[1].Run();
-                    if (!(CPUStop & CPUStop_GXStall)) DMAs[2].Run();
-                    if (!(CPUStop & CPUStop_GXStall)) DMAs[3].Run();
-                    if (ConsoleType == 1)
+                    if (CPUStop & CPUStop_GXStall)
                     {
-                        auto& dsi = dynamic_cast<melonDS::DSi&>(*this);
-                        dsi.RunNDMAs(0);
-                    }
-                    ts = ARM9Timestamp - ts;
-                    for (int i = 0; i < 7; i++)
-                    {
-                        ARM9.ICacheFillTimes[i] += ts;
-                        ARM9.DCacheFillTimes[i] += ts;
-                    }
-                    ARM9.WBTimestamp += ts;
+                        // GXFIFO stall
+                        s32 cycles = GPU.GPU3D.CyclesToRunFor();
 
-                }
-                else
-                {
-                    ARM9.Execute<cpuMode>();
+                        ARM9Timestamp = std::min(ARM9Target, ARM9Timestamp+(cycles<<ARM9ClockShift));
+                    }
+                    else if (CPUStop & CPUStop_DMA9)
+                    {
+                        u64 ts = ARM9Timestamp;
+                        DMAs[0].Run();
+                        if (!(CPUStop & CPUStop_GXStall)) DMAs[1].Run();
+                        if (!(CPUStop & CPUStop_GXStall)) DMAs[2].Run();
+                        if (!(CPUStop & CPUStop_GXStall)) DMAs[3].Run();
+                        if (ConsoleType == 1)
+                        {
+                            auto& dsi = dynamic_cast<melonDS::DSi&>(*this);
+                            dsi.RunNDMAs(0);
+                        }
+                        /*ts = ARM9Timestamp - ts;
+                        for (int i = 0; i < 7; i++)
+                        {
+                            ARM9.ICacheFillTimes[i] += ts;
+                            ARM9.DCacheFillTimes[i] += ts;
+                        }
+                        ARM9.WBTimestamp += ts;*/
+
+                    }
+                    else
+                    {
+                        if (ARM9.TimingPtr == 0) ARM9.Execute<cpuMode>();
+                    }
+                    ResolveMainRAM();
                 }
 
                 RunTimers(0);
                 GPU.GPU3D.Run();
+                //printf("9 ARM9: %lli %08X %i ARM7: %lli %08X %i SYS: %lli\n", ARM9Timestamp, ARM9.PC, ARM9.TimingPtr, ARM7Timestamp << ARM9ClockShift, ARM7.R[15], ARM7.TimingPtr, SysTimestamp << ARM9ClockShift);
 
-                target = ARM9Timestamp >> ARM9ClockShift;
+                target = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
                 CurCPU = 1;
 
-                while (ARM7Timestamp < target)
+                while ((ARM7Timestamp < target && (ARM7.TimingPtr == 0)) || (ARM9.TimingPtr != 0))
                 {
-                    ARM7Target = target; // might be changed by a reschedule
+                    //printf("7 ARM9: %lli %08X %i ARM7: %lli %08X %i SYS: %lli\n", ARM9Timestamp, ARM9.PC, ARM9.TimingPtr, ARM7Timestamp << ARM9ClockShift, ARM7.R[15], ARM7.TimingPtr, SysTimestamp << ARM9ClockShift);
+                    target = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                    ARM7Target = (ARM9.TimingPtr != 0) ? ARM7Timestamp + 1 : target; // might be changed by a reschedule
 
                     if (CPUStop & CPUStop_DMA7)
                     {
@@ -1066,7 +1535,7 @@ u32 NDS::RunFrame()
                     }
                     else
                     {
-                        ARM7.Execute<cpuMode>();
+                        if (ARM7.TimingPtr == 0) ARM7.Execute<cpuMode>();
                     }
 
                     ResolveMainRAM();
@@ -1085,7 +1554,7 @@ u32 NDS::RunFrame()
 
         if (GPU.TotalScanlines == 0)
             continue;
-
+            
 #ifdef DEBUG_CHECK_DESYNC
         Log(LogLevel::Debug, "[%08X%08X] ARM9=%ld, ARM7=%ld, GPU=%ld\n",
             (u32)(SysTimestamp>>32), (u32)SysTimestamp,
@@ -1096,7 +1565,8 @@ u32 NDS::RunFrame()
         SPU.TransferOutput();
         break;
     }
-
+    
+    //printf("F ARM9: %lli %08X %i ARM7: %lli %08X %i SYS: %lli\n", ARM9Timestamp, ARM9.PC, ARM9.TimingPtr, ARM7Timestamp << ARM9ClockShift, ARM7.R[15], ARM7.TimingPtr, SysTimestamp << ARM9ClockShift);
     // In the context of TASes, frame count is traditionally the primary measure of emulated time,
     // so it needs to be tracked even if NDS is powered off.
     NumFrames++;
