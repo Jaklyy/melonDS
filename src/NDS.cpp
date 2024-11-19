@@ -74,13 +74,11 @@ const s32 kIterationCycleMargin = 8;
 //
 // timings for GBA slot and wifi are set up at runtime
 
-NDS* NDS::Current = nullptr;
+thread_local NDS* NDS::Current = nullptr;
 
 NDS::NDS() noexcept :
     NDS(
         NDSArgs {
-            nullptr,
-            nullptr,
             std::make_unique<ARM9BIOSImage>(bios_arm9_bin),
             std::make_unique<ARM7BIOSImage>(bios_arm7_bin),
             Firmware(0),
@@ -102,8 +100,8 @@ NDS::NDS(NDSArgs&& args, int type, void* userdata) noexcept :
     SPI(*this, std::move(args.Firmware)),
     RTC(*this),
     Wifi(*this),
-    NDSCartSlot(*this, std::move(args.NDSROM)),
-    GBACartSlot(*this, type == 1 ? nullptr : std::move(args.GBAROM)),
+    NDSCartSlot(*this, nullptr),
+    GBACartSlot(*this, nullptr),
     AREngine(*this),
     ARM9(*this, args.GDB, args.JIT.has_value()),
     ARM7(*this, args.GDB, args.JIT.has_value()),
@@ -130,6 +128,7 @@ NDS::NDS(NDSArgs&& args, int type, void* userdata) noexcept :
     MainRAM = JIT.Memory.GetMainRAM();
     SharedWRAM = JIT.Memory.GetSharedWRAM();
     ARM7WRAM = JIT.Memory.GetARM7WRAM();
+
 }
 
 NDS::~NDS() noexcept
@@ -226,6 +225,15 @@ void NDS::SetJITArgs(std::optional<JITArgs> args) noexcept
     }
 
     EnableJIT = args.has_value();
+}
+#endif
+
+#ifdef GDBSTUB_ENABLED
+void NDS::SetGdbArgs(std::optional<GDBArgs> args) noexcept
+{
+    ARM9.SetGdbArgs(args);
+    ARM7.SetGdbArgs(args);
+    EnableGDBStub = args.has_value();
 }
 #endif
 
@@ -752,11 +760,6 @@ void NDS::SetGBASave(const u8* savedata, u32 savelen)
         GBACartSlot.SetSaveMemory(savedata, savelen);
     }
 
-}
-
-void NDS::LoadGBAAddon(int type)
-{
-    GBACartSlot.LoadAddon(UserData, type);
 }
 
 void NDS::LoadBIOS()
@@ -1415,6 +1418,8 @@ void NDS::ResolveMainRAM()
 template <CPUExecuteMode cpuMode>
 u32 NDS::RunFrame()
 {
+    Current = this;
+
     FrameStartTimestamp = SysTimestamp;
 
     GPU.TotalScanlines = 0;
@@ -3276,6 +3281,9 @@ u8 NDS::ARM9IORead8(u32 addr)
     case 0x04000132: return KeyCnt[0] & 0xFF;
     case 0x04000133: return KeyCnt[0] >> 8;
 
+    case 0x04000180: return IPCSync9 & 0xFF;
+    case 0x04000181: return IPCSync9 >> 8;
+
     case 0x040001A0:
         if (!(ExMemCnt[0] & (1<<11)))
             return NDSCartSlot.GetSPICnt() & 0xFF;
@@ -3713,6 +3721,17 @@ void NDS::ARM9IOWrite8(u32 addr, u8 val)
         return;
     case 0x04000133:
         KeyCnt[0] = (KeyCnt[0] & 0x00FF) | (val << 8);
+        return;
+
+    case 0x04000181:
+        IPCSync7 &= 0xFFF0;
+        IPCSync7 |= (val & 0x0F);
+        IPCSync9 &= 0xB0FF;
+        IPCSync9 |= ((val & 0x4F) << 8);
+        if ((val & 0x20) && (IPCSync7 & 0x4000))
+        {
+            SetIRQ(1, IRQ_IPCSync);
+        }
         return;
 
     case 0x04000188:
@@ -4206,6 +4225,9 @@ u8 NDS::ARM7IORead8(u32 addr)
 
     case 0x04000138: return RTC.Read() & 0xFF;
 
+    case 0x04000180: return IPCSync7 & 0xFF;
+    case 0x04000181: return IPCSync7 >> 8;
+
     case 0x040001A0:
         if (ExMemCnt[0] & (1<<11))
             return NDSCartSlot.GetSPICnt() & 0xFF;
@@ -4513,6 +4535,17 @@ void NDS::ARM7IOWrite8(u32 addr, u8 val)
         return;
 
     case 0x04000138: RTC.Write(val, true); return;
+
+    case 0x04000181:
+        IPCSync9 &= 0xFFF0;
+        IPCSync9 |= (val & 0x0F);
+        IPCSync7 &= 0xB0FF;
+        IPCSync7 |= ((val & 0x4F) << 8);
+        if ((val & 0x20) && (IPCSync9 & 0x4000))
+        {
+            SetIRQ(0, IRQ_IPCSync);
+        }
+        return;
 
     case 0x04000188:
         NDS::ARM7IOWrite32(addr, val | (val << 8) | (val << 16) | (val << 24));

@@ -50,6 +50,7 @@ void ARMv5::CP15Reset()
     CP15Control = 0x2078; // dunno
 
     RNGSeed = 44203;
+    TraceProcessID = 0;
 
     // Memory Regions Protection
     PU_CodeRW = 0;

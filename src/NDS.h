@@ -394,7 +394,6 @@ public: // TODO: Encapsulate the rest of these members
     u32 GetGBASaveLength() const { return GBACartSlot.GetSaveMemoryLength(); }
     void SetGBASave(const u8* savedata, u32 savelen);
 
-    void LoadGBAAddon(int type);
     std::unique_ptr<GBACart::CartCommon> EjectGBACart() { return GBACartSlot.EjectCart(); }
 
     u32 RunFrame();
@@ -490,6 +489,12 @@ public: // TODO: Encapsulate the rest of these members
     void SetJITArgs(std::optional<JITArgs> args) noexcept {}
 #endif
 
+#ifdef GDBSTUB_ENABLED
+    void SetGdbArgs(std::optional<GDBArgs> args) noexcept;
+#else
+    void SetGdbArgs(std::optional<GDBArgs> args) noexcept {}
+#endif
+
 private:
     void InitTimings();
     u32 SchedListMask;
@@ -548,8 +553,8 @@ public:
     NDS& operator=(const NDS&) = delete;
     NDS(NDS&&) = delete;
     NDS& operator=(NDS&&) = delete;
-    // The frontend should set and unset this manually after creating and destroying the NDS object.
-    [[deprecated("Temporary workaround until JIT code generation is revised to accommodate multiple NDS objects.")]] static NDS* Current;
+
+    static thread_local NDS* Current;
 protected:
     explicit NDS(NDSArgs&& args, int type, void* userdata) noexcept;
     virtual void DoSavestateExtra(Savestate* file) {}
