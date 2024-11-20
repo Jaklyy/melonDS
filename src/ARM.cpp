@@ -350,15 +350,8 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
             TimingBlocks[++TimingPtr] = 0xC100;
             TimingBlocks[++TimingPtr] = 0;
-
-            for (int i = 0; i < 7; i++)
-            {
-                ICacheFillTimes[i] -= curtime;
-                DCacheFillTimes[i] -= curtime;
-            }
-            TimestampActual -= curtime;
-            WBTimestamp -= curtime;
-            WBInitialTS -= curtime;
+            
+            AdjustTimes();
             ICacheFillPtr = 7;
         }
         else
@@ -766,14 +759,7 @@ void ARMv5::Execute()
             if (TimingPtr > 0)
             {
                 //if (TimingBlocks[TimingPtr] == 0xFFFC) TimingBlocks[TimingPtr] = 0;
-                for (int i = 0; i < 7; i++)
-                {
-                    ICacheFillTimes[i] -= TimingBlocks[TimingPtr];
-                    DCacheFillTimes[i] -= TimingBlocks[TimingPtr];
-                }
-                TimestampActual -= TimingBlocks[TimingPtr];
-                WBTimestamp -= TimingBlocks[TimingPtr];
-                WBInitialTS -= TimingBlocks[TimingPtr];
+                AdjustTimes();
 
                 if (TimingBlocks[TimingPtr] > 0xFF)
                 {
@@ -1369,7 +1355,7 @@ bool ARMv4::DataRead8(u32 addr, u32* val)
 {
     if ((addr >> 24) == 0x02) // main ram
     {
-        TimingBlocks[++TimingPtr] = 0x8200;
+        TimingBlocks[++TimingPtr] = 0x8201;
         TimingBlocks[++TimingPtr] = 0;
 
         *val = BusRead8(addr);

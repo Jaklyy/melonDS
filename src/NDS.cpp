@@ -917,7 +917,6 @@ void NDS::RunCycles(ARM* cpu, u64* ts)
         cpu->TimingPtr = 0;
         cpu->TimingBlocks[0] = 0;
     }
-    //if (*ts < MainRAMTimestamp) *ts = MainRAMTimestamp; // i think this is wrong
 }
 
 void NDS::RunMainRAM7()
@@ -925,42 +924,42 @@ void NDS::RunMainRAM7()
     u16 block = ARM7.TimingBlocks[ARM7.ClearPtr];
     if (block >> 8)
     {
-        while (ARM7.CurCnt < (block & 0xFF))
+        if (((ARM7.CurCnt > 0) || (block & 0x4000)) && MainRAMLastAccess) // try to continue burst
         {
-            if (((ARM7.CurCnt > 0) || (block & 0x4000)) && MainRAMLastAccess) // try to continue burst
+            if (block & 0x0300)
             {
-                if (block & 0x0300)
-                {
-                    MainRAMTimestamp += 1;
-                    ARM7Timestamp += 1;
-                }
-                else
-                {
-                    MainRAMTimestamp += 2;
-                    ARM7Timestamp += 2;
-                }
+                MainRAMTimestamp += 1;
+                ARM7Timestamp += 1;
             }
             else
             {
-                if (ARM7Timestamp < MainRAMTimestamp) ARM7Timestamp = MainRAMTimestamp;
-
-                if (block & 0x0300) // 8/16 bit
-                {
-                    MainRAMTimestamp = ARM7Timestamp + 8;
-                    ARM7Timestamp += ((block & 0x04) ? 3 : 5);
-                    MainRAMLastAccess = 1;
-                }
-                else
-                {
-                    MainRAMTimestamp = ARM7Timestamp + 9;
-                    ARM7Timestamp += ((block & 0x04) ? 4 : 6);
-                    MainRAMLastAccess = 1;
-                }
+                MainRAMTimestamp += 2;
+                ARM7Timestamp += 2;
             }
-            ARM7.CurCnt++;
         }
-        ARM7.CurCnt = 0;
-        ARM7.ClearPtr++;
+        else
+        {
+            if (ARM7Timestamp < MainRAMTimestamp) ARM7Timestamp = MainRAMTimestamp;
+
+            if (block & 0x0300) // 8/16 bit
+            {
+                MainRAMTimestamp = ARM7Timestamp + 8;
+                ARM7Timestamp += ((block & 0x0400) ? 3 : 5);
+                MainRAMLastAccess = 1;
+            }
+            else
+            {
+                MainRAMTimestamp = ARM7Timestamp + 9;
+                ARM7Timestamp += ((block & 0x0400) ? 4 : 6);
+                MainRAMLastAccess = 1;
+            }
+        }
+        ARM7.CurCnt++;
+        if (ARM7.CurCnt >= (block & 0xFF))
+        {
+            ARM7.CurCnt = 0;
+            ARM7.ClearPtr++;
+        }
     }
     
     if ((ARM9.TimingPtr != 0) && ((ARM9Timestamp >> ARM9ClockShift) < ARM7Timestamp)) ARM9Timestamp = ARM7Timestamp << ARM9ClockShift;
@@ -975,6 +974,76 @@ void NDS::RunMainRAM9()
     switch (block >> 8)
     {
         case 0x00: break;
+
+        case 0x80: // 32 bit read
+        case 0x84: // 32 bit write
+        {
+            if ((ARM9.CurCnt > 0) && !MainRAMLastAccess)
+            {
+                ARM9Timestamp += 2 << ARM9ClockShift;
+                MainRAMTimestamp += 2;
+            }
+            else
+            {
+                if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
+                else (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+
+                ARM9Timestamp += (((block & 0x0400) ? 7 : 9) << ARM9ClockShift) - 1;
+                MainRAMTimestamp += 9;
+            }
+
+            ARM9.CurCnt++;
+            if (ARM9.CurCnt >= (block & 0xFF))
+            {
+                u32 overlap;
+                if ((ARM9.CurCnt <= 1) || MainRAMLastAccess || (block & 0x0400)) // ended with nonsequential or a write
+                    overlap = 3 << ARM9ClockShift;
+                else overlap = 2 << ARM9ClockShift; // sequential read
+
+                ARM9Timestamp -= ARM9.TimestampActual = overlap;
+                
+                ARM9.CurCnt = 0;
+                ARM9.ClearPtr++;
+            }
+            MainRAMLastAccess = 0;
+            break;
+        }
+        case 0x81: // 16 bit read
+        case 0x85: // 16 bit write
+        {
+            if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
+            else (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+
+            ARM9Timestamp += (((block & 0x0400) ? 3 : 5) << ARM9ClockShift) - 1;
+            MainRAMTimestamp += 8;
+            ARM9.TimestampActual = 3 << ARM9ClockShift;
+
+            MainRAMLastAccess = 0;
+            ARM9.ClearPtr++;
+            break;
+        }
+        case 0x82: // 8 bit read
+        case 0x86: // 8 bit write
+        {
+            if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
+            else (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+
+            ARM9Timestamp += (((block & 0x0400) ? 4 : 6) << ARM9ClockShift) - 1;
+            MainRAMTimestamp += 9; // checkme?
+            ARM9.TimestampActual = 3 << ARM9ClockShift;
+
+            MainRAMLastAccess = 0;
+            ARM9.ClearPtr++;
+            break;
+        }
+        case 0x40: // code fetch
+        {
+            if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
+            else (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+
+            ARM9Timestamp += (9 << ARM9ClockShift) - 1;
+            MainRAMTimestamp += 9;
+        }
 
         case 0xC0: // stream fetch
         {
@@ -1150,7 +1219,7 @@ void NDS::RunMainRAM9Async()
 void NDS::ResolveMainRAM()
 {
     if (ARM7.TimingPtr == 0 && ARM9.TimingPtr == 0) return;
-    //printf("S %lli %lli\n", ARM9Timestamp, ARM7Timestamp << ARM9ClockShift);
+
     if (ARM9.TimingPtr != 0) RunCycles(&ARM9, &ARM9Timestamp);
     if (ARM7.TimingPtr != 0) RunCycles(&ARM7, &ARM7Timestamp);
     

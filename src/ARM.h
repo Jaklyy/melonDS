@@ -189,7 +189,7 @@ public:
 
     u64 MainRAMTimestamp;
 
-    u16 TimingBlocks[32]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst; 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
+    u16 TimingBlocks[32]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst (arm7) / code fetch (arm9); 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
                            * lsbs are a counter: if msb set, num main ram fetches; else, num cycles
                            * 0xC0 == ICache Stream Fetch; 0xC1 == Instruction NS Flush; 0xC2 == Data Access Flush;
                            * 0xC3 == ICache Stream Start; lsb used for what point it begins;
@@ -617,6 +617,19 @@ public:
      * @return Value of the cp15 register
      */
     u32 CP15Read(const u32 id) const;
+
+    void AdjustTimes()
+    {
+        for (int i = 0; i < 7; i++)
+        {
+            ICacheFillTimes[i] -= TimingBlocks[TimingPtr];
+            DCacheFillTimes[i] -= TimingBlocks[TimingPtr];
+        }
+        TimestampActual -= TimingBlocks[TimingPtr];
+        WBTimestamp -= TimingBlocks[TimingPtr];
+        WBInitialTS -= TimingBlocks[TimingPtr];
+    }
+
 
     u32 CP15Control;                                //! CP15 Register 1: Control Register
 
