@@ -221,8 +221,6 @@ void ARMv5::Reset()
     ILPrevReg = 16;
 
     ICacheFillPtr = 7;
-    ICStreamProgMR = 0;
-    ICStreamBorkMR = false;
     DCacheFillPtr = 7;
     ICacheStreamMainRAM = false;
     DCacheStreamMainRAM = false;
@@ -350,7 +348,7 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
         if (ICacheStreamMainRAM)
         {
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC100 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0xC100;
             TimingBlocks[++TimingPtr] = 0;
 
             for (int i = 0; i < 7; i++)

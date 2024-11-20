@@ -691,8 +691,6 @@ public:
     u8 ICacheFillPtr;
     u8 DCacheFillPtr;
     bool ICacheStreamMainRAM;
-    u8 ICStreamProgMR;
-    bool ICStreamBorkMR;
     bool DCacheStreamMainRAM;
     s64 ICacheFillTimes[7];
     s64 DCacheFillTimes[7];

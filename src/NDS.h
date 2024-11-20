@@ -252,7 +252,9 @@ public: // TODO: Encapsulate the rest of these members
 
     // no need to worry about those overflowing, they can keep going for atleast 4350 years
     u64 ARM9Timestamp, ARM9Target;
+    u64 Async9Timestamp; // used for tracking the ARM9's semi-asynchronous hardware features for Main RAM contention (cache streaming, write buffer)
     u64 ARM7Timestamp, ARM7Target;
+    u64 MainRAMTimestamp; // used for handling Main RAM contention (Main RAM can only perform one access at a time)
     u32 ARM9ClockShift;
 
     u32 IME[2];
@@ -267,9 +269,12 @@ public: // TODO: Encapsulate the rest of these members
     u16 PowerControl9;
 
     u16 ExMemCnt[2];
-    u64 MainRAMTimestamp;
     bool MainRAMLastAccess; // 0 == 9; 1 == 7
-
+    u8 Async9Mode; // 0 == none; 1 == ICache; 2 == DCache; 3 == Write Buffer; 
+    u8 CheckAsync9; // ICache: 0 == Unforced; 1 == Start; 2 == Fetch; 3 == Instruction Flush; 4 == Data Flush; 5 == Fetch Miss;
+    u8 Async9Curr;
+    u8 Async9Goal;
+    u8 ICacheProgress;
     alignas(u32) u8 ROMSeed0[2*8];
     alignas(u32) u8 ROMSeed1[2*8];
 
@@ -480,7 +485,9 @@ public: // TODO: Encapsulate the rest of these members
 
     void ResolveMainRAM();
     void RunCycles(ARM* cpu, u64* ts);
-
+    void RunMainRAM7();
+    void RunMainRAM9();
+    void RunMainRAM9Async();
 #ifdef JIT_ENABLED
     [[nodiscard]] bool IsJITEnabled() const noexcept { return EnableJIT; }
     void SetJITArgs(std::optional<JITArgs> args) noexcept;

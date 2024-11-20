@@ -50,7 +50,6 @@ void ARMv5::CP15Reset()
     CP15Control = 0x2078; // dunno
 
     RNGSeed = 44203;
-    TraceProcessID = 0;
 
     // Memory Regions Protection
     PU_CodeRW = 0;
@@ -427,7 +426,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
                 if (ICacheStreamMainRAM)
                 {
                     s8 curtime = (s8)TimingBlocks[TimingPtr];
-                    TimingBlocks[++TimingPtr] = 0xC000 + (ICacheFillTimes[ICacheFillPtr++] - curtime);
+                    TimingBlocks[++TimingPtr] = 0xC000;
                     //TimingBlocks[++TimingPtr] = 0x0100 + (TimestampActual - curtime);
                     TimingBlocks[++TimingPtr] = 0;
 
@@ -439,6 +438,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
                     TimestampActual -= curtime;
                     WBTimestamp -= curtime;
                     WBInitialTS -= curtime;
+                    ICacheFillPtr++;
                 }
                 else
                 {
@@ -552,6 +552,15 @@ u32 ARMv5::ICacheLookup(const u32 addr)
     
     if ((addr >> 24) == 0x02)
     {
+        for (int i = 0; i < 7; i++)
+        {
+            ICacheFillTimes[i] -= TimingBlocks[TimingPtr];
+            DCacheFillTimes[i] -= TimingBlocks[TimingPtr];
+        }
+        TimestampActual -= TimingBlocks[TimingPtr];
+        WBTimestamp -= TimingBlocks[TimingPtr];
+        WBInitialTS -= TimingBlocks[TimingPtr];
+
         if (CP15BISTTestStateRegister & CP15_BIST_TR_DISABLE_ICACHE_STREAMING) [[unlikely]]
         {
             TimingBlocks[++TimingPtr] = 0xC308;
@@ -2283,7 +2292,7 @@ bool ARMv5::DataRead8(u32 addr, u32* val)
         if (ICacheStreamMainRAM)
         {
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC200 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
 
             for (int i = 0; i < 7; i++)
@@ -2391,7 +2400,7 @@ bool ARMv5::DataRead16(u32 addr, u32* val)
         if (ICacheStreamMainRAM)
         {
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC200 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
 
             for (int i = 0; i < 7; i++)
@@ -2499,7 +2508,7 @@ bool ARMv5::DataRead32(u32 addr, u32* val)
         if (ICacheStreamMainRAM)
         {
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC200 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
 
             for (int i = 0; i < 7; i++)
@@ -2602,7 +2611,7 @@ bool ARMv5::DataRead32S(u32 addr, u32* val)
         if (ICacheStreamMainRAM)
         {
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC200 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
 
             for (int i = 0; i < 7; i++)
@@ -2732,7 +2741,7 @@ bool ARMv5::DataWrite8(u32 addr, u8 val)
         if (ICacheStreamMainRAM)
         {
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC200 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
 
             for (int i = 0; i < 7; i++)
@@ -2848,7 +2857,7 @@ bool ARMv5::DataWrite16(u32 addr, u16 val)
         if (ICacheStreamMainRAM)
         {
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC200 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
 
             for (int i = 0; i < 7; i++)
@@ -2964,7 +2973,7 @@ bool ARMv5::DataWrite32(u32 addr, u32 val)
         if (ICacheStreamMainRAM)
         {
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC200 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
 
             for (int i = 0; i < 7; i++)
@@ -3075,7 +3084,7 @@ bool ARMv5::DataWrite32S(u32 addr, u32 val)
         if (ICacheStreamMainRAM)
         {
             s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC200 + (ICacheFillTimes[ICacheFillPtr] - curtime);
+            TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
 
             for (int i = 0; i < 7; i++)
