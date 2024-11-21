@@ -189,7 +189,7 @@ public:
 
     u64 MainRAMTimestamp;
 
-    u16 TimingBlocks[32]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst (arm7) / code fetch (arm9); 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
+    u16 TimingBlocks[48]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst (arm7) / code fetch (arm9); 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
                            * lsbs are a counter: if msb set, num main ram fetches; else, num cycles
                            * 0xC0 == ICache Stream Fetch; 0xC1 == Instruction NS Flush; 0xC2 == Data Access Flush;
                            * 0xC3 == ICache Stream Start; lsb used for what point it begins;

@@ -471,7 +471,7 @@ void NDS::Reset()
     Async9Mode = 0;
     Async9Curr = 0;
     Async9Goal = 0;
-    ICacheProgress = 0;
+    CacheProgress = 0;
 
     InitTimings();
 
@@ -973,7 +973,7 @@ void NDS::RunMainRAM9()
     u16 block = ARM9.TimingBlocks[ARM9.ClearPtr];
     switch (block >> 8)
     {
-        case 0x00: break;
+        case 0x00: break; // somehow a normal timing block got into the system, just ignore it.
 
         case 0x80: // 32 bit read
         case 0x84: // 32 bit write
@@ -986,7 +986,7 @@ void NDS::RunMainRAM9()
             else
             {
                 if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
-                else (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+                else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
 
                 ARM9Timestamp += (((block & 0x0400) ? 7 : 9) << ARM9ClockShift) - 1;
                 MainRAMTimestamp += 9;
@@ -1006,13 +1006,14 @@ void NDS::RunMainRAM9()
                 ARM9.ClearPtr++;
             }
             MainRAMLastAccess = 0;
+            if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
             break;
         }
         case 0x81: // 16 bit read
         case 0x85: // 16 bit write
         {
             if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
-            else (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+            else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
 
             ARM9Timestamp += (((block & 0x0400) ? 3 : 5) << ARM9ClockShift) - 1;
             MainRAMTimestamp += 8;
@@ -1020,13 +1021,14 @@ void NDS::RunMainRAM9()
 
             MainRAMLastAccess = 0;
             ARM9.ClearPtr++;
+            if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
             break;
         }
         case 0x82: // 8 bit read
         case 0x86: // 8 bit write
         {
             if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
-            else (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+            else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
 
             ARM9Timestamp += (((block & 0x0400) ? 4 : 6) << ARM9ClockShift) - 1;
             MainRAMTimestamp += 9; // checkme?
@@ -1034,30 +1036,31 @@ void NDS::RunMainRAM9()
 
             MainRAMLastAccess = 0;
             ARM9.ClearPtr++;
+            if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
             break;
         }
         case 0x40: // code fetch
         {
             if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
-            else (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+            else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
 
             ARM9Timestamp += (9 << ARM9ClockShift) - 1;
             MainRAMTimestamp += 9;
+            if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
         }
 
         case 0xC0: // stream fetch
         {
-            //printf("StreamFetch\n");
             if (Async9Mode != 1)
             {
-                if ((ICacheProgress < 8) && (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) + 1))) ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) + 1;
+                if ((CacheProgress < 8) && (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) + 1))) ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) + 1;
                 else
                 {
                     ARM9Timestamp++;
                     ARM9.ClearPtr++;
                 }
             }
-            else if (ICacheProgress < Async9Curr)
+            else if (CacheProgress < Async9Curr)
             {
                 CheckAsync9 = 5;
             }
@@ -1065,50 +1068,119 @@ void NDS::RunMainRAM9()
             {
                 CheckAsync9 = 2;
                 Async9Goal++;
-                ICacheProgress++;
+                CacheProgress++;
             }
             break;
         }
         case 0xC1: // Instruction NS
         {
-            //printf("I NS\n");
             if (Async9Mode == 1)
             {
                 CheckAsync9 = 3;
-                ICacheProgress = Async9Goal = 8;
+                CacheProgress = Async9Goal = 8;
             }
-            else ARM9.ClearPtr++;
+            else
+            {
+                u64 time = (Async9Timestamp << ARM9ClockShift);
+                if (ARM9Timestamp < time) ARM9Timestamp = time;
+                ARM9.ClearPtr++;
+            }
             break;
         }
         case 0xC2: // Data Bus Access
         {
-            //printf("DBA\n");
             if (Async9Mode == 1)
             {
                 CheckAsync9 = 4;
-                ICacheProgress = Async9Goal = 8;
+                CacheProgress = Async9Goal = 8;
             }
             else ARM9.ClearPtr++;
             break;
         }
         case 0xC3: // ICache Stream Start
         {
-            //printf("IC START\n");
             Async9Mode = 1;
             CheckAsync9 = 1;
-            Async9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
-            ICacheProgress = Async9Goal = block & 0xFF;
+            u64 time = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+            if (Async9Timestamp < time) Async9Timestamp = time;
+            //else ARM9Timestamp = Async9Timestamp >> ARM9ClockShift;
+            CacheProgress = Async9Goal = block & 0xFF;
             break;
         }
-        default:
+        
+        case 0x20: // stream fetch
+        {
+            /*if (Async9Mode != 1)
+            {
+                if ((CacheProgress < 8) && (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) + 1))) ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) + 1;
+                else
+                {
+                    ARM9Timestamp++;
+                    ARM9.ClearPtr++;
+                }
+            }
+            else if (CacheProgress < Async9Curr)
+            {
+                CheckAsync9 = 5;
+            }
+            else*/
+            if (Async9Mode != 2)
+            {
+                ARM9Timestamp++;
+                ARM9.ClearPtr++;
+            }
+            else
+            {
+                CheckAsync9 = 2;
+                Async9Goal++;
+                CacheProgress++;
+            }
+            break;
+        }
+        case 0x21: // Instruction Bus Access
+        {
+            if (Async9Mode == 2)
+            {
+                CheckAsync9 = 4;
+                CacheProgress = Async9Goal = 8;
+            }
+            else ARM9.ClearPtr++;
+            break;
+        }
+        case 0x22: // Data NS
+        {
+            if (Async9Mode == 2)
+            {
+                CheckAsync9 = 3;
+                CacheProgress = Async9Goal = 8;
+            }
+            else
+            {
+                u64 time = (Async9Timestamp << ARM9ClockShift);
+                if (ARM9Timestamp < time) ARM9Timestamp = time;
+                ARM9.ClearPtr++;
+            }
+            break;
+        }
+        case 0x23: // DCache Stream Fetch
+        {
+            Async9Mode = 2;
+            CheckAsync9 = 1;
+            u64 time = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+            if (Async9Timestamp < time) Async9Timestamp = time;
+            //else ARM9Timestamp = Async9Timestamp >> ARM9ClockShift;
+            CacheProgress = Async9Goal = block & 0xFF;
+            break;
+        }
+
+        default: // error handler
         {
             printf("CRYING2 %04X, %08X\n", block, ARM9.CurInstr);
             ARM9.ClearPtr++;
             break;
         }
     }
-    //if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
-    
+
     RunCycles(&ARM9, &ARM9Timestamp);
 }
 
@@ -1116,7 +1188,8 @@ void NDS::RunMainRAM9Async()
 {
     switch(Async9Mode)
     {
-        case 1:
+        case 1: // ICache Logic
+        case 2: // DCache Logic
         {
             if ((Async9Curr > 0) && !MainRAMLastAccess)
             {

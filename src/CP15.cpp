@@ -425,12 +425,10 @@ u32 ARMv5::ICacheLookup(const u32 addr)
                 //printf("CACHE SEMIMISS\n");
                 if (ICacheStreamMainRAM)
                 {
-                    s8 curtime = (s8)TimingBlocks[TimingPtr];
+                    AdjustTimes();
                     TimingBlocks[++TimingPtr] = 0xC000;
-                    //TimingBlocks[++TimingPtr] = 0x0100 + (TimestampActual - curtime);
                     TimingBlocks[++TimingPtr] = 0;
                     
-                    AdjustTimes();
                     ICacheFillPtr++;
                 }
                 else
@@ -704,6 +702,15 @@ u32 ARMv5::DCacheLookup(const u32 addr)
             {
                 s64 nextfill = DCacheFillTimes[DCacheFillPtr++];
                 //if (NDS.ARM9Timestamp < nextfill) // can this ever really fail?
+                if (DCacheStreamMainRAM)
+                {
+                    AdjustTimes();
+                    TimingBlocks[++TimingPtr] = 0x2000;
+                    TimingBlocks[++TimingPtr] = 0;
+                    
+                    DCacheFillPtr++;
+                }
+                else
                 {
                     DataCycles = nextfill - TimingBlocks[TimingPtr];
                 }
@@ -798,8 +805,9 @@ u32 ARMv5::DCacheLookup(const u32 addr)
     DCacheTags[line] = tag | (line & (DCACHE_SETS-1)) | CACHE_FLAG_VALID;
     
     // timing logic
-    /*if ((addr >> 24) == 0x02)
+    if ((addr >> 24) == 0x02)
     {
+        AdjustTimes();
         if (CP15BISTTestStateRegister & CP15_BIST_TR_DISABLE_DCACHE_STREAMING) [[unlikely]]
         {
             TimingBlocks[++TimingPtr] = 0x2308;
@@ -810,8 +818,9 @@ u32 ARMv5::DCacheLookup(const u32 addr)
             DCacheFillPtr = (addr & (DCACHE_LINELENGTH-1)) / 4;
         }
         TimingBlocks[++TimingPtr] = 0;
+        DCacheStreamMainRAM = true;
     }
-    else*/
+    else
     {
         // Disabled DCACHE Streaming:
         // Wait until the entire cache line is filled before continuing with execution
@@ -872,6 +881,7 @@ u32 ARMv5::DCacheLookup(const u32 addr)
                 DCacheFillTimes[i] = cycles;
                 //printf("DCache: %lli\n", cycles);
             }
+            DCacheStreamMainRAM = false;
 
             //if ((addr >> 24) == 0x02) MainRAMTimestamp = ((linepos < 7) ? ICacheFillTimes[6] : NDS.ARM9Timestamp);
         }
@@ -2175,8 +2185,17 @@ u64 ARMv5::CodeRead32(u32 addr, bool branch)
     // bus reads can only overlap with dcache streaming by 6 cycles
     if (DCacheFillPtr < 7)
     {
-        s64 time = DCacheFillTimes[6] - 6; // checkme: minus 6?
-        if (TimingBlocks[TimingPtr] < time) TimingBlocks[TimingPtr] = time;
+        if (DCacheStreamMainRAM)
+        {
+            AdjustTimes();
+            TimingBlocks[++TimingPtr] = 0x2100;
+            TimingBlocks[++TimingPtr] = 0;
+        }
+        else
+        {
+            s64 time = DCacheFillTimes[6] - 6; // checkme: minus 6?
+            if (TimingBlocks[TimingPtr] < time) TimingBlocks[TimingPtr] = time;
+        }
     }
     
     if (PU_Map[addr>>12] & 0x30)
@@ -2229,9 +2248,19 @@ bool ARMv5::DataRead8(u32 addr, u32* val)
 {
     if (DCacheFillPtr < 7)
     {
-        s64 fillend = DCacheFillTimes[6] + 1;
-        if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
-        DCacheFillPtr = 7;
+        if (DCacheStreamMainRAM)
+        {
+            AdjustTimes();
+            TimingBlocks[++TimingPtr] = 0x2200;
+            TimingBlocks[++TimingPtr] = 0;
+            DCacheFillPtr = 7;
+        }
+        else
+        {
+            s64 fillend = DCacheFillTimes[6] + 1;
+            if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
+            DCacheFillPtr = 7;
+        }
     }
 
     // Data Aborts
@@ -2278,7 +2307,6 @@ bool ARMv5::DataRead8(u32 addr, u32* val)
         if (ICacheStreamMainRAM)
         {
             AdjustTimes();
-            s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
             TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
         }
@@ -2331,9 +2359,19 @@ bool ARMv5::DataRead16(u32 addr, u32* val)
 {
     if (DCacheFillPtr < 7)
     {
-        s64 fillend = DCacheFillTimes[6] + 1;
-        if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
-        DCacheFillPtr = 7;
+        if (DCacheStreamMainRAM)
+        {
+            AdjustTimes();
+            TimingBlocks[++TimingPtr] = 0x2200;
+            TimingBlocks[++TimingPtr] = 0;
+            DCacheFillPtr = 7;
+        }
+        else
+        {
+            s64 fillend = DCacheFillTimes[6] + 1;
+            if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
+            DCacheFillPtr = 7;
+        }
     }
 
     // Data Aborts
@@ -2382,7 +2420,6 @@ bool ARMv5::DataRead16(u32 addr, u32* val)
         if (ICacheStreamMainRAM)
         {
             AdjustTimes();
-            s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
             TimingBlocks[++TimingPtr] = 0xC200;
             TimingBlocks[++TimingPtr] = 0;
         }
@@ -2435,9 +2472,19 @@ bool ARMv5::DataRead32(u32 addr, u32* val)
 {
     if (DCacheFillPtr < 7)
     {
-        s64 fillend = DCacheFillTimes[6] + 1;
-        if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
-        DCacheFillPtr = 7;
+        if (DCacheStreamMainRAM)
+        {
+            AdjustTimes();
+            TimingBlocks[++TimingPtr] = 0x2200;
+            TimingBlocks[++TimingPtr] = 0;
+            DCacheFillPtr = 7;
+        }
+        else
+        {
+            s64 fillend = DCacheFillTimes[6] + 1;
+            if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
+            DCacheFillPtr = 7;
+        }
     }
 
     // Data Aborts
@@ -2575,28 +2622,6 @@ bool ARMv5::DataRead32S(u32 addr, u32* val)
             }
         }
     #endif
-    
-    // bus reads can only overlap with icache streaming by 6 cycles
-    // checkme: does cache trigger this?
-    if (ICacheFillPtr < 7)
-    {
-        if (ICacheStreamMainRAM)
-        {
-            AdjustTimes();
-            TimingBlocks[++TimingPtr] = 0xC200;
-            TimingBlocks[++TimingPtr] = 0;
-        }
-        else
-        {
-            s64 time = ICacheFillTimes[6] - 6; // checkme: minus 6?
-            if (TimingBlocks[TimingPtr] < time) TimingBlocks[TimingPtr] = time;
-        }
-    }
-
-    if (PU_Map[addr>>12] & 0x30) // checkme
-        WriteBufferDrain();
-    else
-        WriteBufferCheck<1>();
 
     // bursts cannot cross a 1kb boundary
     if (addr & 0x3FF) // s
@@ -2618,6 +2643,28 @@ bool ARMv5::DataRead32S(u32 addr, u32* val)
     }
     else // ns
     {
+        // bus reads can only overlap with icache streaming by 6 cycles
+        // checkme: does cache trigger this?
+        if (ICacheFillPtr < 7)
+        {
+            if (ICacheStreamMainRAM)
+            {
+                AdjustTimes();
+                TimingBlocks[++TimingPtr] = 0xC200;
+                TimingBlocks[++TimingPtr] = 0;
+            }
+            else
+            {
+                s64 time = ICacheFillTimes[6] - 6; // checkme: minus 6?
+                if (TimingBlocks[TimingPtr] < time) TimingBlocks[TimingPtr] = time;
+            }
+        }
+
+        if (PU_Map[addr>>12] & 0x30) // checkme
+            WriteBufferDrain();
+        else
+            WriteBufferCheck<1>();
+
         if ((addr >> 24) == 0x02)
         {
             DataCycles = 0;
@@ -2655,9 +2702,19 @@ bool ARMv5::DataWrite8(u32 addr, u8 val)
 {
     if (DCacheFillPtr < 7)
     {
-        s64 fillend = DCacheFillTimes[6] + 1;
-        if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
-        DCacheFillPtr = 7;
+        if (DCacheStreamMainRAM)
+        {
+            AdjustTimes();
+            TimingBlocks[++TimingPtr] = 0x2200;
+            TimingBlocks[++TimingPtr] = 0;
+            DCacheFillPtr = 7;
+        }
+        else
+        {
+            s64 fillend = DCacheFillTimes[6] + 1;
+            if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
+            DCacheFillPtr = 7;
+        }
     }
 
     // Data Aborts
@@ -2766,9 +2823,19 @@ bool ARMv5::DataWrite16(u32 addr, u16 val)
 {
     if (DCacheFillPtr < 7)
     {
-        s64 fillend = DCacheFillTimes[6] + 1;
-        if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
-        DCacheFillPtr = 7;
+        if (DCacheStreamMainRAM)
+        {
+            AdjustTimes();
+            TimingBlocks[++TimingPtr] = 0x2200;
+            TimingBlocks[++TimingPtr] = 0;
+            DCacheFillPtr = 7;
+        }
+        else
+        {
+            s64 fillend = DCacheFillTimes[6] + 1;
+            if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
+            DCacheFillPtr = 7;
+        }
     }
 
     // Data Aborts
@@ -2879,9 +2946,19 @@ bool ARMv5::DataWrite32(u32 addr, u32 val)
 {
     if (DCacheFillPtr < 7)
     {
-        s64 fillend = DCacheFillTimes[6] + 1;
-        if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
-        DCacheFillPtr = 7;
+        if (DCacheStreamMainRAM)
+        {
+            AdjustTimes();
+            TimingBlocks[++TimingPtr] = 0x2200;
+            TimingBlocks[++TimingPtr] = 0;
+            DCacheFillPtr = 7;
+        }
+        else
+        {
+            s64 fillend = DCacheFillTimes[6] + 1;
+            if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend; // checkme: should this be data cycles?
+            DCacheFillPtr = 7;
+        }
     }
 
     // Data Aborts
@@ -3033,28 +3110,9 @@ bool ARMv5::DataWrite32S(u32 addr, u32 val)
             }
         }
     #endif
-    
-    // bus reads can only overlap with icache streaming by 6 cycles
-    // checkme: does cache trigger this?
-    if (ICacheFillPtr < 7)
-    {
-        if (ICacheStreamMainRAM)
-        {
-            AdjustTimes();
-            TimingBlocks[++TimingPtr] = 0xC200;
-            TimingBlocks[++TimingPtr] = 0;
-        }
-        else
-        {
-            s64 time = ICacheFillTimes[6] - 6; // checkme: minus 6?
-            if (TimingBlocks[TimingPtr] < time) TimingBlocks[TimingPtr] = time;
-        }
-    }
 
     if (!(PU_Map[addr>>12] & 0x30)) // non-bufferable
     {
-        WriteBufferCheck<2>();
-
         // bursts cannot cross a 1kb boundary
         if (addr & 0x3FF) // s
         {
@@ -3080,6 +3138,25 @@ bool ARMv5::DataWrite32S(u32 addr, u32 val)
         }
         else // ns
         {
+            // bus reads can only overlap with icache streaming by 6 cycles
+            // checkme: does cache trigger this?
+            if (ICacheFillPtr < 7)
+            {
+                if (ICacheStreamMainRAM)
+                {
+                    AdjustTimes();
+                    TimingBlocks[++TimingPtr] = 0xC200;
+                    TimingBlocks[++TimingPtr] = 0;
+                }
+                else
+                {
+                    s64 time = ICacheFillTimes[6] - 6; // checkme: minus 6?
+                    if (TimingBlocks[TimingPtr] < time) TimingBlocks[TimingPtr] = time;
+                }
+            }
+
+            WriteBufferCheck<2>();
+
             if ((addr >> 24) == 0x02)
             {
                 DataCycles = 0;

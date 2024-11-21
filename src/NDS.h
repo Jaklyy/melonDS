@@ -274,7 +274,7 @@ public: // TODO: Encapsulate the rest of these members
     u8 CheckAsync9; // ICache: 0 == Unforced; 1 == Start; 2 == Fetch; 3 == Instruction Flush; 4 == Data Flush; 5 == Fetch Miss;
     u8 Async9Curr;
     u8 Async9Goal;
-    u8 ICacheProgress;
+    u8 CacheProgress;
     alignas(u32) u8 ROMSeed0[2*8];
     alignas(u32) u8 ROMSeed1[2*8];
 
