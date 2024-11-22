@@ -2259,7 +2259,7 @@ u64 ARMv5::CodeRead32(u32 addr, bool branch)
             TimingBlocks[++TimingPtr] = 0;
         }
 
-        if (TimingBlocks[TimingPtr] < TimestampActual) TimingBlocks[TimingPtr] = TimestampActual;
+        //if (TimingBlocks[TimingPtr] < TimestampActual) TimingBlocks[TimingPtr] = TimestampActual;
     
         DataRegion = Mem9_Null;
 
@@ -2285,7 +2285,7 @@ u64 ARMv5::CodeRead32(u32 addr, bool branch)
             TimingBlocks[++TimingPtr] = 0;
         }
 
-        if (TimingBlocks[TimingPtr] < TimestampActual) TimingBlocks[TimingPtr] = TimestampActual;
+        //if (TimingBlocks[TimingPtr] < TimestampActual) TimingBlocks[TimingPtr] = TimestampActual;
     
         DataRegion = Mem9_Null;
 
@@ -3216,7 +3216,7 @@ bool ARMv5::DataWrite32(u32 addr, u32 val)
         {
             DataCycles = 0;
             AdjustTimes();
-            TimingBlocks[++TimingPtr] = 0x8004;
+            TimingBlocks[++TimingPtr] = 0x8400;
             TimingBlocks[++TimingPtr] = 0;
             /*//if (NDS.ARM9Timestamp < MainRAMTimestamp) NDS.ARM9Timestamp = (MainRAMTimestamp + ((1<<NDS.ARM9ClockShift)-1)) & ~((1<<NDS.ARM9ClockShift)-1);
             DataRegion = Mem9_MainRAM;
@@ -3316,7 +3316,7 @@ bool ARMv5::DataWrite32S(u32 addr, u32 val)
             {
                 DataCycles = 0;
                 AdjustTimes();
-                TimingBlocks[++TimingPtr] = 0x8C01;
+                TimingBlocks[++TimingPtr] = 0x8C00;
                 TimingBlocks[++TimingPtr] = 0;
                 //MainRAMTimestamp = NDS.ARM9Timestamp + DataCycles;
                 //MainRAMTimestamp += 2<<NDS.ARM9ClockShift;
