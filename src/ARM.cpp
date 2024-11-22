@@ -224,6 +224,9 @@ void ARMv5::Reset()
     DCacheFillPtr = 7;
     ICacheStreamMainRAM = false;
     DCacheStreamMainRAM = false;
+    
+    WBQueuePtr = 0;
+    WBQueueRead = 0;
 
     WBWritePointer = 16;
     WBFillPointer = 0;
@@ -760,15 +763,15 @@ void ARMv5::Execute()
             {
                 //if (TimingBlocks[TimingPtr] == 0xFFFC) TimingBlocks[TimingPtr] = 0;
                 AdjustTimes();
-
-                if (TimingBlocks[TimingPtr] > 0xFF)
+                //if (TimingPtr >= 48) printf("NOOOOOOOOOOOOOOOOO\n");
+                //if (TimingBlocks[TimingPtr] > 0xFF)
                 {
-                    printf("R9C %i %08X\n", TimingBlocks[TimingPtr], CurInstr);
-                    printf("%lli %lli %lli %lli %lli %i\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS, TimingPtr);
+                    //printf("R9C %i %08X\n", TimingBlocks[TimingPtr], CurInstr);
+                    //printf("%lli %lli %lli %lli %lli %i\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS, TimingPtr);
 
-                    for(int i = 0; i <= TimingPtr; i++) printf("%04X ", TimingBlocks[i]);
+                    //for(int i = 0; i <= TimingPtr; i++) printf("%04X ", TimingBlocks[i]);
 
-                    printf("\n");
+                    //printf("\n");
                 }
                 /*
                 if ((DCacheStreamMainRAM) && (DCacheFillPtr != 7) && (DCacheFillTimes[DCacheFillPtr] <= 0))
@@ -782,9 +785,9 @@ void ARMv5::Execute()
             }
             else
             {
-                if (TimingBlocks[0] > 0xFF)
+                //if (TimingBlocks[0] > 0xFF)
                 {
-                    printf("%lli %lli %lli %lli %lli\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS);
+                    //printf("%lli %lli %lli %lli %lli\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS);
                 }
                 NDS.ARM9Timestamp += TimingBlocks[0];
                 for (int i = 0; i < 7; i++)
@@ -796,14 +799,14 @@ void ARMv5::Execute()
                 WBTimestamp -= TimingBlocks[0];
                 WBInitialTS -= TimingBlocks[0];
                 
-                if (TimingBlocks[0] > 0xFF)
+                //if (TimingBlocks[0] > 0xFF)
                 {
-                    printf("R90 %i %08X\n", TimingBlocks[0], CurInstr);
-                    printf("%lli %lli %lli %lli %lli\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS);
+                    //printf("R90 %i %08X\n", TimingBlocks[0], CurInstr);
+                    //printf("%lli %lli %lli %lli %lli\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS);
 
-                    for(int i = 0; i <= TimingPtr; i++) printf("%04X ", TimingBlocks[i]);
+                    //for(int i = 0; i <= TimingPtr; i++) printf("%04X ", TimingBlocks[i]);
 
-                    printf("\n");
+                    //printf("\n");
                 }
 
                 TimingBlocks[0] = 0;
@@ -866,7 +869,7 @@ void ARMv4::Execute()
             return;
         }
     }
-
+    
     while (NDS.ARM7Timestamp < NDS.ARM7Target)
     {
 #ifdef JIT_ENABLED
@@ -1331,7 +1334,7 @@ u16 ARMv4::CodeRead16(u32 addr)
         return BusRead16(addr);
     }
 
-    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[addr>>15][Nonseq?0:1];
+    TimingBlocks[TimingPtr] += NDS.ARM7MemTimings[(addr>>15) & 0x1FFFF][Nonseq?0:1];
 
     return BusRead16(addr);
 }

@@ -271,10 +271,21 @@ public: // TODO: Encapsulate the rest of these members
     u16 ExMemCnt[2];
     bool MainRAMLastAccess; // 0 == 9; 1 == 7
     u8 Async9Mode; // 0 == none; 1 == ICache; 2 == DCache; 3 == Write Buffer; 
-    u8 CheckAsync9; // ICache: 0 == Unforced; 1 == Start; 2 == Fetch; 3 == Instruction Flush; 4 == Data Flush; 5 == Fetch Miss;
+    u8 CheckAsync9; /* Cache: 0 == Unforced; 1 == Start; 2 == Fetch; 3 == Instruction Flush; 4 == Data Flush; 5 == Fetch Miss;
+                     * WB: 0 == Unforced; 1 == Wait for Fifo Slot; 2 == Drain; 3 == Wait (read); 4 == Wait (Write);
+                     */
     u8 Async9Curr;
     u8 Async9Goal;
     u8 CacheProgress;
+
+    u8 WBWritePtr;
+    u8 WBFillPtr;
+    u64 WBCurr;
+    u64 WBFifo[16];
+    u32 WBAddr;
+    bool WBWriting;
+    bool WBActive;
+
     alignas(u32) u8 ROMSeed0[2*8];
     alignas(u32) u8 ROMSeed1[2*8];
 
@@ -487,7 +498,9 @@ public: // TODO: Encapsulate the rest of these members
     void RunCycles(ARM* cpu, u64* ts);
     void RunMainRAM7();
     void RunMainRAM9();
+    void RunARM9WriteBuffer();
     void RunMainRAM9Async();
+
 #ifdef JIT_ENABLED
     [[nodiscard]] bool IsJITEnabled() const noexcept { return EnableJIT; }
     void SetJITArgs(std::optional<JITArgs> args) noexcept;

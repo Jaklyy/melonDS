@@ -189,11 +189,12 @@ public:
 
     u64 MainRAMTimestamp;
 
-    u16 TimingBlocks[48]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst (arm7) / code fetch (arm9); 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
+    u16 TimingBlocks[64]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst (arm7) / code fetch (arm9); 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
                            * lsbs are a counter: if msb set, num main ram fetches; else, num cycles
                            * 0xC0 == ICache Stream Fetch; 0xC1 == Instruction NS Flush; 0xC2 == Data Access Flush;
                            * 0xC3 == ICache Stream Start; lsb used for what point it begins;
                            * 0x20 == DCache variants of above;
+                           * 0xA0 == Write Buffer Submit; 0xA1 == Drain WB; 0xA2 == WB Wait Read; 0xA3 == WB Wait Write; 0xA4 == WB TS Update;
                            * 0x01 == MemoryStage wait;
                            */
     u8 TimingPtr;
@@ -707,6 +708,10 @@ public:
     bool DCacheStreamMainRAM;
     s64 ICacheFillTimes[7];
     s64 DCacheFillTimes[7];
+
+    u8 WBQueuePtr;
+    u8 WBQueueRead;
+    u64 WriteBufferQueue[32];
 
     u8 WBWritePointer; // which entry to attempt to write next; should always be ANDed with 0xF after incrementing
     u8 WBFillPointer; // where the next entry should be added; should always be ANDed with 0xF after incrementing

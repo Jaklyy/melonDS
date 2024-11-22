@@ -472,6 +472,11 @@ void NDS::Reset()
     Async9Curr = 0;
     Async9Goal = 0;
     CacheProgress = 0;
+    
+    WBWritePtr = 16;
+    WBFillPtr = 0;
+    WBWriting = false;
+    WBActive = false;
 
     InitTimings();
 
@@ -922,6 +927,7 @@ void NDS::RunCycles(ARM* cpu, u64* ts)
 void NDS::RunMainRAM7()
 {
     u16 block = ARM7.TimingBlocks[ARM7.ClearPtr];
+    //printf("7 %04X\n", block);
     if (block >> 8)
     {
         if (((ARM7.CurCnt > 0) || (block & 0x4000)) && MainRAMLastAccess) // try to continue burst
@@ -971,6 +977,7 @@ void NDS::RunMainRAM9()
 {
     u16 oldptr = ARM9.ClearPtr;
     u16 block = ARM9.TimingBlocks[ARM9.ClearPtr];
+    //printf("9 %04X %08X\n", block, ARM9.CurInstr);
     switch (block >> 8)
     {
         case 0x00: break; // somehow a normal timing block got into the system, just ignore it.
@@ -1076,6 +1083,7 @@ void NDS::RunMainRAM9()
         {
             if (Async9Mode == 1)
             {
+                //printf("okc1\n");
                 CheckAsync9 = 3;
                 CacheProgress = Async9Goal = 8;
             }
@@ -1105,6 +1113,7 @@ void NDS::RunMainRAM9()
             if (Async9Timestamp < time) Async9Timestamp = time;
             //else ARM9Timestamp = Async9Timestamp >> ARM9ClockShift;
             CacheProgress = Async9Goal = block & 0xFF;
+            Async9Curr = 0;
             break;
         }
         
@@ -1151,6 +1160,7 @@ void NDS::RunMainRAM9()
         {
             if (Async9Mode == 2)
             {
+                //printf("ok22\n");
                 CheckAsync9 = 3;
                 CacheProgress = Async9Goal = 8;
             }
@@ -1170,6 +1180,68 @@ void NDS::RunMainRAM9()
             if (Async9Timestamp < time) Async9Timestamp = time;
             //else ARM9Timestamp = Async9Timestamp >> ARM9ClockShift;
             CacheProgress = Async9Goal = block & 0xFF;
+            Async9Curr = 0;
+            break;
+        }
+
+        case 0xA0: // WB Submit
+        {
+            if (WBWritePtr == WBFillPtr)
+            {
+                CheckAsync9 = 1;
+                Async9Mode = 3;
+            }
+            else 
+            {
+                if (WBWritePtr == 16)
+                {
+                    WBWritePtr = 0;
+                    if (!WBWriting)
+                    {
+                        if (Async9Timestamp < ((ARM9Timestamp + 1 + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))
+                        Async9Timestamp = (ARM9Timestamp + 1 + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                    }
+                }
+                WBFifo[WBFillPtr] = ARM9.WriteBufferQueue[ARM9.WBQueueRead];
+                WBFillPtr = (WBFillPtr + 1) & 0xF;
+                ARM9.WBQueueRead += 1;
+                //printf("WBQueuePtr %i\n", ARM9.WBQueuePtr);
+                if (ARM9.WBQueueRead == ARM9.WBQueuePtr)
+                {
+                    ARM9.WBQueueRead = 0;
+                    ARM9.WBQueuePtr = 0;
+                    WBActive = true;
+                }
+                ARM9.ClearPtr++;
+                ARM9Timestamp++;
+                Async9Mode = 3;
+            }
+            break;
+        }
+        case 0xA1: // WB Drain
+        {
+            if (Async9Mode != 3) ARM9.ClearPtr++;
+            else CheckAsync9 = 2;
+            break;
+        }
+        case 0xA2: // WB Wait (Read)
+        {   
+            //printf("oka2\n");
+            if (Async9Mode != 3) ARM9.ClearPtr++;
+            else CheckAsync9 = 3;
+            break;
+        }
+        case 0xA3: // WB Wait (Write)
+        {   
+            if (Async9Mode != 3) ARM9.ClearPtr++;
+            else CheckAsync9 = 4;
+            break;
+        }
+        case 0xA4: // WB TS Update
+        {
+            if (Async9Timestamp < ((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))
+            Async9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+            ARM9.ClearPtr++;
             break;
         }
 
@@ -1184,8 +1256,112 @@ void NDS::RunMainRAM9()
     RunCycles(&ARM9, &ARM9Timestamp);
 }
 
+void NDS::RunARM9WriteBuffer()
+{
+    if (WBWriting)
+    {
+        u32 cycles;
+        switch (WBCurr >> 61)
+        {
+        case 0:
+        {
+            if (ARM9Regions[WBAddr>>14] == Mem9_MainRAM)
+            {
+                if (MainRAMTimestamp > Async9Timestamp) Async9Timestamp = MainRAMTimestamp;
+                MainRAMTimestamp = Async9Timestamp + 9;
+                cycles = 5;
+            }
+            else cycles = (ARM9.MemTimings[WBAddr>>14][0] - 3) >> ARM9ClockShift; // todo: twl timings
+            break;
+        }
+        case 1:
+        {
+            if (ARM9Regions[WBAddr>>14] == Mem9_MainRAM)
+            {
+                if (MainRAMTimestamp > Async9Timestamp) Async9Timestamp = MainRAMTimestamp;
+                MainRAMTimestamp = Async9Timestamp + 8;
+                cycles = 4;
+            }
+            else cycles = (ARM9.MemTimings[WBAddr>>14][0] - 3) >> ARM9ClockShift; // todo: twl timings
+            break;
+        }
+        case 3:
+        {
+            WBAddr += 4;
+            if ((ARM9Regions[WBAddr>>14] != Mem9_MainRAM) || !MainRAMLastAccess)
+            {
+                MainRAMTimestamp += 2;
+                cycles = ARM9.MemTimings[WBAddr>>14][2] >> ARM9ClockShift;
+                break;
+            }
+        }
+        case 2:
+        {
+            if (ARM9Regions[WBAddr>>14] == Mem9_MainRAM)
+            {
+                if (MainRAMTimestamp > Async9Timestamp) Async9Timestamp = MainRAMTimestamp;
+                MainRAMTimestamp = Async9Timestamp + 9;
+                cycles = 5;
+            }
+            else cycles = (ARM9.MemTimings[WBAddr>>14][1] - 3) >> ARM9ClockShift; // todo: twl timings
+            MainRAMLastAccess = 0;
+            break;
+        }
+        default:
+        {
+            printf("HAFHJADGJSADG\n");
+        }
+        }
+
+        Async9Timestamp += cycles;
+
+        switch (WBCurr >> 61)
+        {
+            case 0: // byte
+                //ARM9Write8 (WBAddr, WBCurr);
+                break;
+            case 1: // halfword
+                //ARM9Write16(WBAddr, WBCurr);
+                break;
+            case 2: // word
+            case 3:
+                //ARM9Write32(WBAddr, WBCurr);
+                break;
+            default: // invalid
+                Platform::Log(Platform::LogLevel::Warn, "WHY ARE WE TRYING TO WRITE AN ADDRESS VIA THE WRITE BUFFER! PANIC!!!\n", (u8)(WBCurr >> 61));
+                break;
+        }
+
+        WBWriting = false;
+    }
+
+    if (WBWritePtr == 16)
+    {
+        WBActive = false;
+        return;
+    }
+
+    if ((WBFifo[WBWritePtr] >> 61) != 4)
+    {
+        WBCurr = WBFifo[WBWritePtr];
+        WBWriting = true;
+    }
+    else
+    {
+        WBAddr = (u32)WBFifo[WBWritePtr];
+    }
+
+    WBWritePtr = (WBWritePtr + 1) & 0xF;
+    if (WBWritePtr == WBFillPtr)
+    {
+        WBWritePtr = 16;
+        WBFillPtr = 0;
+    }
+}
+
 void NDS::RunMainRAM9Async()
 {
+    //printf("async %i %i\n", Async9Mode, CheckAsync9);
     switch(Async9Mode)
     {
         case 1: // ICache Logic
@@ -1202,6 +1378,7 @@ void NDS::RunMainRAM9Async()
                 MainRAMLastAccess = 0;
             }
             Async9Curr++;
+            //printf("Async9Curr");
             if (Async9Curr >= Async9Goal)
             {
                 switch (CheckAsync9)
@@ -1265,22 +1442,118 @@ void NDS::RunMainRAM9Async()
                     default:
                     {
                         printf("GRAAAAAAAAAAA\n");
+                        break;
                     }
                 }
 
                 if (Async9Curr == 8)
                 {
-                    Async9Mode = 0;
+                    Async9Mode = 3 * WBActive;
                 }
                 CheckAsync9 = 0;
             }
             break;
         }
 
+        case 3:
+        {
+            switch (CheckAsync9)
+            {
+                case 0:
+                {
+                    //printf("cringe 1\n");
+                    RunARM9WriteBuffer();
+                    if (!WBActive)
+                    {
+                        Async9Mode = 0;
+                    }
+                    break;
+                }
+                case 1:
+                {
+                    //printf("cringe 2\n");
+                    RunARM9WriteBuffer();
+                    if (WBWritePtr != WBFillPtr)
+                    {
+                        CheckAsync9 = 0;
+                        ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) - 1;
+                    }
+                    break;
+                }
+                case 2:
+                {
+                    //printf("cringe 3\n");
+                    RunARM9WriteBuffer();
+                    if (!WBActive)
+                    {
+                        CheckAsync9 = 0;
+                        Async9Mode = 0;
+                        ARM9.ClearPtr++;
+                        ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) - 1;
+                    }
+                    break;
+                }
+                case 3:
+                {
+                    //printf("cringe 4\n");
+                    if (ARM9Timestamp >= Async9Timestamp << ARM9ClockShift)
+                    {
+                        RunARM9WriteBuffer();
+                        ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) - 1;
+                        if (WBActive && ((WBFifo[WBWritePtr] >> 61) == 3))
+                        {
+                            CheckAsync9 = 4;
+                        }
+                        else
+                        {
+                            CheckAsync9 = 0;
+                            ARM9.ClearPtr++;
+                        }
+                    }
+                    else if (!WBActive)
+                    {
+                        Async9Mode = 0;
+                        CheckAsync9 = 0;
+                        ARM9.ClearPtr++;
+                    }
+                    else
+                    {
+                        CheckAsync9 = 0;
+                        ARM9.ClearPtr++;
+                    }
+                    break;
+                }
+                case 4:
+                {
+                    //printf("cringe 5\n");
+                    RunARM9WriteBuffer();
+                    ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) - 1;
+                    if (WBActive && ((WBFifo[WBWritePtr] >> 61) != 3))
+                    {
+                        CheckAsync9 = 0;
+                        ARM9.ClearPtr++;
+                    }
+                    else if (!WBActive)
+                    {
+                        Async9Mode = 0;
+                        CheckAsync9 = 0;
+                        ARM9.ClearPtr++;
+                    }
+                    break;
+                }
+                default:
+                {
+                    printf("WHERE???\n");
+                    break;
+                }
+            }
+            break;
+        }
+
         default:
         {
-            printf("HUH? %hhi\n", Async9Mode);
-            Async9Mode = 0;
+            printf("HUH? %i %04X %08X\n", Async9Mode, ARM9.TimingBlocks[ARM9.ClearPtr], ARM9.CurInstr);
+            //Async9Mode = 0;
             return;
         }
     }
@@ -1303,6 +1576,7 @@ void NDS::ResolveMainRAM()
         while (((ARM7.TimingPtr != 0) && (ARM7Timestamp <= ((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))) ||
                ((ARM9.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) < ARM7Timestamp)))
         {
+            //printf("loop purgatory %i %i", CheckAsync9, Async9Mode);
             while ((ARM7.TimingPtr != 0) && (ARM7Timestamp <= ((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift)) && ((Async9Mode == 0) || (ARM7Timestamp <= Async9Timestamp)))
             {
                 RunMainRAM7();
@@ -1324,6 +1598,7 @@ void NDS::ResolveMainRAM()
         while (((ARM7.TimingPtr != 0) && (ARM7Timestamp < ((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))) ||
                ((ARM9.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) <= ARM7Timestamp)))
         {
+            //printf("loop purgatory %i %i", CheckAsync9, Async9Mode);
             while ((ARM9.TimingPtr != 0) && !CheckAsync9 && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) <= ARM7Timestamp))
             {
                 RunMainRAM9();
@@ -1443,7 +1718,8 @@ u32 NDS::RunFrame()
                 RunTimers(0);
                 GPU.GPU3D.Run();
                 //printf("9 ARM9: %lli %08X %i ARM7: %lli %08X %i SYS: %lli\n", ARM9Timestamp, ARM9.PC, ARM9.TimingPtr, ARM7Timestamp << ARM9ClockShift, ARM7.R[15], ARM7.TimingPtr, SysTimestamp << ARM9ClockShift);
-
+                
+                //printf("main\n");
                 target = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
                 CurCPU = 1;
 
@@ -1469,7 +1745,8 @@ u32 NDS::RunFrame()
                     {
                         if (ARM7.TimingPtr == 0) ARM7.Execute<cpuMode>();
                     }
-
+                    
+                    //printf("7m\n");
                     ResolveMainRAM();
 
                     RunTimers(1);
