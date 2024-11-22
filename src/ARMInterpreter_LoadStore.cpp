@@ -98,9 +98,9 @@ void LoadSingle(ARM* cpu, const u8 rd, const u8 rn, const s32 offset, const u16 
 
     u32 val;
     bool dabort;
-    if constexpr (size == 8)  dabort = !cpu->DataRead8 (addr, &val);
-    if constexpr (size == 16) dabort = !cpu->DataRead16(addr, &val);
-    if constexpr (size == 32) dabort = !cpu->DataRead32(addr, &val);
+    if constexpr (size == 8)  dabort = !cpu->DataRead8 (addr, &val, rd);
+    if constexpr (size == 16) dabort = !cpu->DataRead16(addr, &val, rd);
+    if constexpr (size == 32) dabort = !cpu->DataRead32(addr, &val, rd);
 
     if constexpr (writeback == Writeback::Trans)
     {
@@ -350,8 +350,8 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
     u32 r = (cpu->CurInstr>>12) & 0xF; \
     if (r&1) { A_UNK(cpu); return; } \
     ExecuteStage<true>(cpu, ilmask | (1 << ((cpu->CurInstr>>16) & 0xF))); \
-    bool dabort = !cpu->DataRead32(offset, &cpu->R[r]); \
-    u32 val; dabort |= !cpu->DataRead32S(offset+4, &val); \
+    bool dabort = !cpu->DataRead32(offset, &cpu->R[r], r); \
+    u32 val; dabort |= !cpu->DataRead32S(offset+4, &val, r+1); \
     if (cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 2; \
     cpu->AddCycles_CDI(); \
     if (dabort) { \
@@ -373,8 +373,8 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
     u32 r = (cpu->CurInstr>>12) & 0xF; \
     if (r&1) { A_UNK(cpu); return; } \
     ExecuteStage<true>(cpu, ilmask | (1 << ((cpu->CurInstr>>16) & 0xF))); \
-    bool dabort = !cpu->DataRead32(addr, &cpu->R[r]); \
-    u32 val; dabort |= !cpu->DataRead32S(addr+4, &val); \
+    bool dabort = !cpu->DataRead32(addr, &cpu->R[r], r); \
+    u32 val; dabort |= !cpu->DataRead32S(addr+4, &val, r+1); \
     if (cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 2; \
     cpu->AddCycles_CDI(); \
     if (dabort) { \
@@ -489,8 +489,8 @@ inline void SWP(ARM* cpu)
     if ((cpu->CurInstr & 0xF) == 15) rm += 4;
 
     u32 val;
-    if ((byte ? cpu->DataRead8 (base, &val)
-              : cpu->DataRead32(base, &val))) [[likely]]
+    if ((byte ? cpu->DataRead8 (base, &val, 255)
+              : cpu->DataRead32(base, &val, 255))) [[likely]]
     {
         cpu->TimingBlocks[cpu->TimingPtr] += cpu->DataCycles; // checkme
 
@@ -560,7 +560,7 @@ void EmptyRListLDMSTM(ARM* cpu, const u8 baseid, const u8 flags)
         if (flags & load)
         {
             u32 pc;
-            cpu->DataRead32(base, &pc);
+            cpu->DataRead32(base, &pc, 15);
 
             cpu->AddCycles_CDI();
             cpu->JumpTo(pc, flags & restoreorthumb);
@@ -634,8 +634,8 @@ void A_LDM(ARM* cpu)
         {
             if (preinc) base += 4;
             u32 val;
-            dabort |= !(first ? cpu->DataRead32 (base, &val)
-                              : cpu->DataRead32S(base, &val));
+            dabort |= !(first ? cpu->DataRead32 (base, &val, i)
+                              : cpu->DataRead32S(base, &val, i));
 
             // remaining loads still occur but are not written to a reg after a data abort is raised
             if (!dabort) [[likely]] cpu->R[i] = val;
@@ -649,8 +649,8 @@ void A_LDM(ARM* cpu)
     if (cpu->CurInstr & (1<<15))
     {
         if (preinc) base += 4;
-        dabort |= !(first ? cpu->DataRead32 (base, &pc)
-                          : cpu->DataRead32S(base, &pc));
+        dabort |= !(first ? cpu->DataRead32 (base, &pc, 15)
+                          : cpu->DataRead32S(base, &pc, 15));
 
         if (!preinc) base += 4;
 
@@ -834,7 +834,7 @@ void T_LDR_PCREL(ARM* cpu)
 {
     ExecuteStage<false>(cpu, 15);
     u32 addr = (cpu->R[15] & ~0x2) + ((cpu->CurInstr & 0xFF) << 2);
-    bool dabort = !cpu->DataRead32(addr, &cpu->R[(cpu->CurInstr >> 8) & 0x7]);
+    bool dabort = !cpu->DataRead32(addr, &cpu->R[(cpu->CurInstr >> 8) & 0x7], (cpu->CurInstr >> 8) & 0x7);
 
     cpu->AddCycles_CDI();
     if (dabort) [[unlikely]] ((ARMv5*)cpu)->DataAbort();
@@ -1022,8 +1022,8 @@ void T_POP(ARM* cpu)
         if (cpu->CurInstr & (1<<i))
         {
             u32 val;
-            dabort |= !(first ? cpu->DataRead32 (base, &val)
-                              : cpu->DataRead32S(base, &val));
+            dabort |= !(first ? cpu->DataRead32 (base, &val, i)
+                              : cpu->DataRead32S(base, &val, i));
             
             if (!dabort) [[likely]] cpu->R[i] = val;
 
@@ -1035,8 +1035,8 @@ void T_POP(ARM* cpu)
     if (cpu->CurInstr & (1<<8))
     {
         u32 pc;
-        dabort |= !(first ? cpu->DataRead32 (base, &pc)
-                          : cpu->DataRead32S(base, &pc));
+        dabort |= !(first ? cpu->DataRead32 (base, &pc, 15)
+                          : cpu->DataRead32S(base, &pc, 15));
 
         if (__builtin_popcount(cpu->CurInstr & 0x1FF) == 1) [[unlikely]] // single reg
         {
@@ -1171,8 +1171,8 @@ void T_LDMIA(ARM* cpu)
         if (cpu->CurInstr & (1<<i))
         {
             u32 val;
-            dabort |= !(first ? cpu->DataRead32 (base, &val)
-                              : cpu->DataRead32S(base, &val));
+            dabort |= !(first ? cpu->DataRead32 (base, &val, i)
+                              : cpu->DataRead32S(base, &val, i));
 
             if (!dabort) [[likely]] cpu->R[i] = val;
             first = false;

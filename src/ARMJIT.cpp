@@ -722,7 +722,7 @@ void ARMJIT::CompileBlock(ARM* cpu) noexcept
                     addressRanges[numAddressRanges++] = translatedAddrRounded;
                 addressMasks[j] |= 1 << ((translatedAddr & 0x1FF) / 16);
                 JIT_DEBUGPRINT("literal loading %08x %08x %08x %08x\n", literalAddr, translatedAddr, addressMasks[j], addressRanges[j]);
-                cpu->DataRead32(literalAddr, &literalValues[numLiterals]);
+                cpu->DataRead32(literalAddr, &literalValues[numLiterals], 255);
                 literalLoadAddrs[numLiterals++] = translatedAddr;
             }
         }

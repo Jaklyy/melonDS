@@ -137,10 +137,10 @@ public:
     void SetupCodeMem(u32 addr);
 
 
-    virtual bool DataRead8(u32 addr, u32* val) = 0;
-    virtual bool DataRead16(u32 addr, u32* val) = 0;
-    virtual bool DataRead32(u32 addr, u32* val) = 0;
-    virtual bool DataRead32S(u32 addr, u32* val) = 0;
+    virtual bool DataRead8(u32 addr, u32* val, u8 reg) = 0;
+    virtual bool DataRead16(u32 addr, u32* val, u8 reg) = 0;
+    virtual bool DataRead32(u32 addr, u32* val, u8 reg) = 0;
+    virtual bool DataRead32S(u32 addr, u32* val, u8 reg) = 0;
     virtual bool DataWrite8(u32 addr, u8 val) = 0;
     virtual bool DataWrite16(u32 addr, u16 val) = 0;
     virtual bool DataWrite32(u32 addr, u32 val) = 0;
@@ -189,17 +189,19 @@ public:
 
     u64 MainRAMTimestamp;
 
-    u16 TimingBlocks[64]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst (arm7) / code fetch (arm9); 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write;
-                           * lsbs are a counter: if msb set, num main ram fetches; else, num cycles
-                           * 0xC0 == ICache Stream Fetch; 0xC1 == Instruction NS Flush; 0xC2 == Data Access Flush;
-                           * 0xC3 == ICache Stream Start; lsb used for what point it begins;
-                           * 0x20 == DCache variants of above;
-                           * 0xA0 == Write Buffer Submit; 0xA1 == Drain WB; 0xA2 == WB Wait Read; 0xA3 == WB Wait Write; 0xA4 == WB TS Update;
-                           * 0x01 == MemoryStage wait;
-                           */
+    u16 TimingBlocks[128]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst (arm7) / code fetch (arm9); 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write; 0x08 == seq;
+                            * lsbs are a counter: if msb set, num main ram fetches; else, num cycles
+                            * 0xC0 == ICache Stream Fetch; 0xC1 == Instruction NS Flush; 0xC2 == Data Access Flush;
+                            * 0xC3 == ICache Stream Start; lsb used for what point it begins;
+                            * 0x20 == DCache variants of above;
+                            * 0xA0 == Write Buffer Submit; 0xA1 == Drain WB; 0xA2 == WB Wait Read; 0xA3 == WB Wait Write; 0xA4 == WB TS Update;
+                            * 0x60 == Reg Deference; 0x01 == 16 bit; 0x02 == 8 bit;
+                            */
     u8 TimingPtr;
     u8 ClearPtr;
     u8 CurCnt;
+
+    u32 DeferAddr[17];
 
 #ifdef JIT_ENABLED
     u32 FastBlockLookupStart, FastBlockLookupSize;
@@ -270,10 +272,10 @@ public:
     // all code accesses are forced nonseq 32bit
     u64 CodeRead32(const u32 addr, const bool branch);
 
-    bool DataRead8(u32 addr, u32* val) override;
-    bool DataRead16(u32 addr, u32* val) override;
-    bool DataRead32(u32 addr, u32* val) override;
-    bool DataRead32S(u32 addr, u32* val) override;
+    bool DataRead8(u32 addr, u32* val, u8 reg) override;
+    bool DataRead16(u32 addr, u32* val, u8 reg) override;
+    bool DataRead32(u32 addr, u32* val, u8 reg) override;
+    bool DataRead32S(u32 addr, u32* val, u8 reg) override;
     bool DataWrite8(u32 addr, u8 val) override;
     bool DataWrite16(u32 addr, u16 val) override;
     bool DataWrite32(u32 addr, u32 val) override;
@@ -760,10 +762,10 @@ public:
     u16 CodeRead16(u32 addr);
     u32 CodeRead32(u32 addr);
 
-    bool DataRead8(u32 addr, u32* val) override;
-    bool DataRead16(u32 addr, u32* val) override;
-    bool DataRead32(u32 addr, u32* val) override;
-    bool DataRead32S(u32 addr, u32* val) override;
+    bool DataRead8(u32 addr, u32* val, u8 reg) override;
+    bool DataRead16(u32 addr, u32* val, u8 reg) override;
+    bool DataRead32(u32 addr, u32* val, u8 reg) override;
+    bool DataRead32S(u32 addr, u32* val, u8 reg) override;
     bool DataWrite8(u32 addr, u8 val) override;
     bool DataWrite16(u32 addr, u16 val) override;
     bool DataWrite32(u32 addr, u32 val) override;

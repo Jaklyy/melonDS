@@ -1259,7 +1259,18 @@ void ARMv5::CodeFetch()
         Store = false;
         DataRegion = Mem9_Null;
     }
-    else NextInstr[1] = CodeRead32(PC, false);
+    else
+    {
+        NextInstr[1] = CodeRead32(PC, false);
+        /*if (TimingPtr > 0)
+        {
+            AdjustTimes();
+            TimingBlocks[++TimingPtr] = 0x6300;
+            TimingBlocks[++TimingPtr] = 0;
+            DeferAddr[16] = PC;
+        }*/
+    }
+    TimestampActual = 0;
 }
 
 void ARMv5::AddCycles_CI(s32 numX)
@@ -1354,7 +1365,7 @@ u32 ARMv4::CodeRead32(u32 addr)
     return BusRead32(addr);
 }
 
-bool ARMv4::DataRead8(u32 addr, u32* val)
+bool ARMv4::DataRead8(u32 addr, u32* val, u8 reg)
 {
     if ((addr >> 24) == 0x02) // main ram
     {
@@ -1371,7 +1382,7 @@ bool ARMv4::DataRead8(u32 addr, u32* val)
     return true;
 }
 
-bool ARMv4::DataRead16(u32 addr, u32* val)
+bool ARMv4::DataRead16(u32 addr, u32* val, u8 reg)
 {
     addr &= ~1;
     
@@ -1390,7 +1401,7 @@ bool ARMv4::DataRead16(u32 addr, u32* val)
     return true;
 }
 
-bool ARMv4::DataRead32(u32 addr, u32* val)
+bool ARMv4::DataRead32(u32 addr, u32* val, u8 reg)
 {
     addr &= ~3;
     
@@ -1409,7 +1420,7 @@ bool ARMv4::DataRead32(u32 addr, u32* val)
     return true;
 }
 
-bool ARMv4::DataRead32S(u32 addr, u32* val)
+bool ARMv4::DataRead32S(u32 addr, u32* val, u8 reg)
 {
     addr &= ~3;
     
