@@ -348,19 +348,15 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
     // thus it requires waiting for the current ICache line fill to complete before continuing
     if (ICacheFillPtr < 7)
     {
-        if (ICacheStreamMainRAM)
+        if (ICacheStreamMainRAM || (TimingPtr > 0))
         {
-            s8 curtime = TimingBlocks[TimingPtr] & 0xFF;
-            TimingBlocks[++TimingPtr] = 0xC100;
-            TimingBlocks[++TimingPtr] = 0;
-            
-            AdjustTimes();
+            TimingBlocks[TimingPtr++] = 0xC100;
             ICacheFillPtr = 7;
         }
         else
         {
-            s64 fillend = ICacheFillTimes[6] + 1;
-            if (TimingBlocks[TimingPtr] < fillend) TimingBlocks[TimingPtr] = fillend;
+            u64 fillend = ICacheFillTimes[6] + 1;
+            if (NDS.ARM9Timestamp < fillend) NDS.ARM9Timestamp = fillend;
             ICacheFillPtr = 7;
         }
     }
@@ -723,6 +719,7 @@ void ARMv5::Execute()
                     u32 icode = (CurInstr >> 6) & 0x3FF;
                     ARMInterpreter::THUMBInstrTable[icode](this);
                 }
+                if (((s64)NDS.ARM9Timestamp) < 0) printf("CRINGE DETECTED %04X\n", CurInstr & 0xFFFF);
             }
             else
             {
@@ -757,13 +754,14 @@ void ARMv5::Execute()
                 }
                 else
                     AddCycles_C();
+                if (((s64)NDS.ARM9Timestamp) < 0) printf("CRINGE DETECTED %08X\n", CurInstr);
             }
-
+            
             if (TimingPtr > 0)
             {
                 //if (TimingBlocks[TimingPtr] == 0xFFFC) TimingBlocks[TimingPtr] = 0;
-                AdjustTimes();
-                //if (TimingPtr >= 48) printf("NOOOOOOOOOOOOOOOOO\n");
+                //AdjustTimes();
+                if (TimingPtr >= 128) printf("NOOOOOOOOOOOOOOOOO %i\n", TimingPtr);
                 //if (TimingBlocks[TimingPtr] > 0xFF)
                 {
                     //printf("R9C %i %08X\n", TimingBlocks[TimingPtr], CurInstr);
@@ -789,7 +787,7 @@ void ARMv5::Execute()
                 {
                     //printf("%lli %lli %lli %lli %lli\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS);
                 }
-                NDS.ARM9Timestamp += TimingBlocks[0];
+                /*NDS.ARM9Timestamp += TimingBlocks[0];
                 for (int i = 0; i < 7; i++)
                 {
                     ICacheFillTimes[i] -= TimingBlocks[0];
@@ -798,7 +796,7 @@ void ARMv5::Execute()
                 TimestampActual -= TimingBlocks[0];
                 WBTimestamp -= TimingBlocks[0];
                 WBInitialTS -= TimingBlocks[0];
-                
+                */
                 //if (TimingBlocks[0] > 0xFF)
                 {
                     //printf("R90 %i %08X\n", TimingBlocks[0], CurInstr);
@@ -809,7 +807,7 @@ void ARMv5::Execute()
                     //printf("\n");
                 }
 
-                TimingBlocks[0] = 0;
+                //TimingBlocks[0] = 0;
                 WriteBufferCheck<false>();
             }
 
@@ -1254,38 +1252,68 @@ void ARMv5::CodeFetch()
         // the value we need is cached by the bus
         // in practice we can treat this as a 1 cycle fetch, with no penalties
         NextInstr[1] >>= 16;
-        TimingBlocks[TimingPtr]++;
-        if (TimingBlocks[TimingPtr] < TimestampActual) TimingBlocks[TimingPtr] = TimestampActual;
-        Store = false;
-        DataRegion = Mem9_Null;
+        if (TimingPtr > 0)
+        {
+            TimingBlocks[TimingPtr++] = 0x4200;
+            TimingBlocks[TimingPtr++] = 0x0000 | 31;
+        }
+        else
+        {
+            NDS.ARM9Timestamp += 1;
+            if (NDS.ARM9Timestamp < TimestampActual) NDS.ARM9Timestamp = TimestampActual;
+            Store = false;
+            DataRegion = Mem9_Null;
+        }
     }
     else
     {
         NextInstr[1] = CodeRead32(PC, false);
-        /*if (TimingPtr > 0)
-        {
-            AdjustTimes();
-            TimingBlocks[++TimingPtr] = 0x6300;
-            TimingBlocks[++TimingPtr] = 0;
-            DeferAddr[16] = PC;
-        }*/
     }
-    TimestampActual = 0;
 }
 
 void ARMv5::AddCycles_CI(s32 numX)
 {
     CodeFetch();
-    TimingBlocks[TimingPtr] += numX;
+    if (TimingPtr > 0)
+    {
+        TimingBlocks[TimingPtr++] = 0x6000 | numX;
+    }
+    else
+    {
+        NDS.ARM9Timestamp += numX;
+    }
 }
 
 void ARMv5::AddCycles_MW(s32 numM)
 {
-    TimestampActual = numM + TimingBlocks[TimingPtr];
+    if (TimingPtr > 0)
+    {
+        TimingBlocks[TimingPtr++] = 0x6100 | numM;
+    }
+    else
+    {
+        TimestampActual = numM + NDS.ARM9Timestamp;
 
-    numM -= 3<<NDS.ARM9ClockShift;
+        numM -= 3<<NDS.ARM9ClockShift;
 
-    if (numM > 0) TimingBlocks[TimingPtr] += numM;
+        if (numM > 0) TimestampActual += numM;
+    }
+}
+
+void ARMv5::AddCycles_MW2()
+{
+    if (TimingPtr > 0)
+    {
+        TimingBlocks[TimingPtr++] = 0x6200 | DataCycles;
+    }
+    else
+    {
+        TimestampActual = NDS.ARM9Timestamp;
+
+        u32 overlap = std::min(DataCycles, 3<<NDS.ARM9ClockShift);
+
+        NDS.ARM9Timestamp -= overlap;
+    }
 }
 
 template <bool bitfield>

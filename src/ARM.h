@@ -189,16 +189,33 @@ public:
 
     u64 MainRAMTimestamp;
 
-    u16 TimingBlocks[128]; /* msb is a flag for main ram access; 0x80 == start burst; 0x40 == cont. burst (arm7) / code fetch (arm9); 0x01 == 16 bit; 0x02 == 8 bit; 0x04 == write; 0x08 == seq;
+    u16 TimingBlocks[256]; /* msb is a flag for main ram access;
                             * lsbs are a counter: if msb set, num main ram fetches; else, num cycles
+                            * 0x80 == main ram burst; 0x01 == 16 bit; 0x02 == 8 bit; 0x03 == Code Fetch (arm9); 0x04 == write; 0x08 == seq;
+                            * 0x40 == cont. burst (arm7); == bus burst; 0x06 == Swap; 0x02 = code fetch; 0x04 == write; 0x08 = seq; lsb are reg id;
+                            * followed by a block containing: 0x80 == 16 bit; 0x40 == 8 bit; 0x001F == Region;
                             * 0xC0 == ICache Stream Fetch; 0xC1 == Instruction NS Flush; 0xC2 == Data Access Flush;
                             * 0xC3 == ICache Stream Start; lsb used for what point it begins;
+                            * 0xC4 = ICache Stream Start Non-Main RAM; followed by a block containing: 0x001F == region;
                             * 0x20 == DCache variants of above;
                             * 0xA0 == Write Buffer Submit; 0xA1 == Drain WB; 0xA2 == WB Wait Read; 0xA3 == WB Wait Write; 0xA4 == WB TS Update;
-                            * 0x60 == Reg Deference; 0x01 == 16 bit; 0x02 == 8 bit;
+                            * 0x60 == Execute Stage; 0x61 == Memory Stage; 0x62 == Memory Stage (post load/store)
+                            SCRAPPED == Reg Deference; 0x08 == Swap; 0x04 == Write; 0x01 == 16 bit; 0x02 == 8 bit; low bits are reg used 
+
+
+                            * 0x10 == Code Fetch - non-bus; 0x11 == Code Fetch - bus; 0x12 == Code Fetch - main ram; 0x13 == Code Fetch - Cache Stream Hit;
+                            * 0x14 == Code Fetch - Cache Miss; 0x15 == Code Fetch - Cache Miss Main RAM; 0x16 == Code Fetch - i(tcm/cache); 0x17 == Code Fetch - bufferable;
+                            *
+                            * 0x20 == Data Read - non-bus; 0x21 == Data Read - bus; 0x22 == Data Read - main ram; 0x23 == Data Read - Cache Stream Hit;
+                            * 0x24 == Data Read - Cache Miss; 0x25 == Data Read - Cache Miss Main RAM; 0x26 == Data Read - bufferable;
+                            *
+                            * 0x30 == Data Write - non-bus; 0x31 == Data Write - bus; 0x32 == Data Write - main ram; 0x33 == Data Write - i(tcm/cache)
+                            * 0x34 == Data Write - bufferable; 
+                            *
+                            * 0x40 == 
                             */
-    u8 TimingPtr;
-    u8 ClearPtr;
+    u16 TimingPtr;
+    u16 ClearPtr;
     u8 CurCnt;
 
     u32 DeferAddr[17];
@@ -288,17 +305,18 @@ public:
     void AddCycles_CI(s32 numX) override;
 
     void AddCycles_MW(s32 numM);
+    void AddCycles_MW2();
 
     void AddCycles_CDI() override
     {
-        AddCycles_MW(DataCycles);
+        AddCycles_MW2();
         DataCycles = 0;
     }
 
     void AddCycles_CD() override
     {
         Store = true;
-        AddCycles_MW(DataCycles);
+        AddCycles_MW2();
         DataCycles = 0;
     }
     
@@ -621,17 +639,6 @@ public:
      */
     u32 CP15Read(const u32 id) const;
 
-    void AdjustTimes()
-    {
-        for (int i = 0; i < 7; i++)
-        {
-            ICacheFillTimes[i] -= TimingBlocks[TimingPtr];
-            DCacheFillTimes[i] -= TimingBlocks[TimingPtr];
-        }
-        TimestampActual -= TimingBlocks[TimingPtr];
-        WBTimestamp -= TimingBlocks[TimingPtr];
-        WBInitialTS -= TimingBlocks[TimingPtr];
-    }
 
 
     u32 CP15Control;                                //! CP15 Register 1: Control Register
@@ -693,7 +700,7 @@ public:
     bool (*GetMemRegion)(u32 addr, bool write, MemRegion* region);
     
     u64 ITCMTimestamp;
-    s64 TimestampActual;
+    u64 TimestampActual;
     u32 PC;
     bool NullFetch;
     bool Store;
@@ -708,8 +715,8 @@ public:
     u8 DCacheFillPtr;
     bool ICacheStreamMainRAM;
     bool DCacheStreamMainRAM;
-    s64 ICacheFillTimes[7];
-    s64 DCacheFillTimes[7];
+    u64 ICacheFillTimes[7];
+    u64 DCacheFillTimes[7];
 
     u8 WBQueuePtr;
     u8 WBQueueRead;
@@ -722,12 +729,12 @@ public:
     u64 WBCurVal; // current value being written; 0-31: val | 61-63: flag; 0 = byte ns; 1 = halfword ns; 2 = word ns; 3 = word s; 4 = address (invalid in this variable)
     u32 storeaddr[16]; // temp until i figure out why using the fifo address entries directly didn't work
     u64 WriteBufferFifo[16]; // 0-31: val | 61-63: flag; 0 = byte ns; 1 = halfword ns; 2 = word ns; 3 = word s; 4 = address
-    s64 WBTimestamp; // current timestamp
+    u64 WBTimestamp; // current timestamp
     //u64 WBMainRAMDelay; // timestamp used to emulate the delay before the next main ram write can begin
     u64 WBDelay; // timestamp in bus cycles use for the delay before next write to the write buffer can occur (seems to be a 1 cycle delay after a write to it)
     u32 WBLastRegion; // the last region written to by the write buffer
-    s64 WBReleaseTS; // the timestamp on which the write buffer relinquished control of the bus back
-    s64 WBInitialTS; // what cycle the entry was first sent in
+    u64 WBReleaseTS; // the timestamp on which the write buffer relinquished control of the bus back
+    u64 WBInitialTS; // what cycle the entry was first sent in
 
 #ifdef GDBSTUB_ENABLED
     u32 ReadMem(u32 addr, int size) override;

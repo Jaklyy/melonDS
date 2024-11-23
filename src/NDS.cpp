@@ -176,6 +176,12 @@ void NDS::SetARM9RegionTimings(u32 addrstart, u32 addrend, u32 region, int buswi
 
         ARM9Regions[i] = region;
     }
+    if (region != 0)
+    {
+        ARM9MemTimingsRgn[__builtin_ctz(region)][0] = N16 + cpuN;
+        ARM9MemTimingsRgn[__builtin_ctz(region)][1] = N32 + cpuN;
+        ARM9MemTimingsRgn[__builtin_ctz(region)][2] = S32;
+    }
 
     ARM9.UpdateRegionTimings(addrstart, addrend);
 }
@@ -250,10 +256,10 @@ void NDS::InitTimings()
 
     // TODO: DSi-specific timings!!
 
-    SetARM9RegionTimings(0x00000, 0x100000, 0, 32, 1, 1); // void
+    SetARM9RegionTimings(0x00000, 0x100000, Mem9_BG,      32, 1, 1); // background
 
     SetARM9RegionTimings(0xFFFF0, 0x100000, Mem9_BIOS,    32, 1, 1); // BIOS
-    SetARM9RegionTimings(0x02000, 0x03000,  Mem9_MainRAM, 16, 8, 1);     // main RAM
+    SetARM9RegionTimings(0x02000, 0x03000,  Mem9_MainRAM, 16, 8, 1); // main RAM
     SetARM9RegionTimings(0x03000, 0x04000,  Mem9_WRAM,    32, 1, 1); // ARM9/shared WRAM
     SetARM9RegionTimings(0x04000, 0x05000,  Mem9_IO,      32, 1, 1); // IO
     SetARM9RegionTimings(0x05000, 0x06000,  Mem9_Pal,     16, 1, 1); // palette
@@ -476,6 +482,22 @@ void NDS::Reset()
     WBFillPtr = 0;
     WBWriting = false;
     WBActive = false;
+
+    ARM9MemTimingsRgn[0][0] = 1;
+    ARM9MemTimingsRgn[0][1] = 1;
+    ARM9MemTimingsRgn[0][2] = 1;
+
+    ARM9MemTimingsRgn[1][0] = 1;
+    ARM9MemTimingsRgn[1][1] = 1;
+    ARM9MemTimingsRgn[1][2] = 1;
+
+    ARM9MemTimingsRgn[30][0] = 1;
+    ARM9MemTimingsRgn[30][1] = 1;
+    ARM9MemTimingsRgn[30][2] = 1;
+
+    ARM9MemTimingsRgn[31][0] = 1;
+    ARM9MemTimingsRgn[31][1] = 1;
+    ARM9MemTimingsRgn[31][2] = 1;
 
     InitTimings();
 
@@ -974,41 +996,40 @@ void NDS::RunMainRAM7()
 
 void NDS::RunMainRAM9()
 {
-    u16 oldptr = ARM9.ClearPtr;
     u16 block = ARM9.TimingBlocks[ARM9.ClearPtr];
+    do
+    {
     //printf("9 %04X %08X\n", block, ARM9.CurInstr);
     switch (block >> 8)
     {
-        case 0x00: break; // somehow a normal timing block got into the system, just ignore it.
+        case 0x00: ARM9.ClearPtr++; break; // somehow a normal timing block got into the system, just ignore it.
 
         case 0x80: // 32 bit read
         case 0x88:
         case 0x84: // 32 bit write
         case 0x8C:
         {
-            ARM9Timestamp += ARM9.TimestampActual;
-            u32 overlap;
             if ((block & 0x0800) && !MainRAMLastAccess)
             {
                 ARM9Timestamp += 2 << ARM9ClockShift;
                 MainRAMTimestamp += 2;
-                overlap = ((block & 0x0400) ? 3 : 2) << ARM9ClockShift;
+                ARM9.DataCycles = ((block & 0x4000) ? 3 : 2) << ARM9ClockShift;
             }
             else
             {
                 if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
                 else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
 
-                ARM9Timestamp += (((block & 0x0400) ? 7 : 9) << ARM9ClockShift) - 1;
+                ARM9Timestamp += ARM9.DataCycles = (((block & 0x0400) ? 7 : 9) << ARM9ClockShift) - 1;
                 MainRAMTimestamp += 9;
-                overlap = 3 << ARM9ClockShift;
             }
 
-            ARM9Timestamp -= ARM9.TimestampActual = overlap;
-
-            ARM9.ClearPtr++;
             MainRAMLastAccess = 0;
             if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+            
+            u8 reg = block & 0xFF;
+            //if ((reg < 15) && !(block & 0x0400)) ARM9.R[reg] = ARM9Read32(ARM9.DeferAddr[reg]);
+            ARM9.ClearPtr++;
             break;
         }
         case 0x81: // 16 bit read
@@ -1017,13 +1038,15 @@ void NDS::RunMainRAM9()
             if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
             else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
 
-            ARM9Timestamp += (((block & 0x0400) ? 6 : 8) << ARM9ClockShift) - 1;
+            ARM9Timestamp += ARM9.DataCycles = (((block & 0x0400) ? 6 : 8) << ARM9ClockShift) - 1;
             MainRAMTimestamp += 8;
-            ARM9.TimestampActual = 3 << ARM9ClockShift;
 
             MainRAMLastAccess = 0;
-            ARM9.ClearPtr++;
             if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+            
+            u8 reg = block & 0xFF;
+            //if ((reg < 15) && !(block & 0x0400)) ARM9.R[reg] = ARM9Read16(ARM9.DeferAddr[reg]);
+            ARM9.ClearPtr++;
             break;
         }
         case 0x82: // 8 bit read
@@ -1032,76 +1055,174 @@ void NDS::RunMainRAM9()
             if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
             else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
 
-            ARM9Timestamp += (((block & 0x0400) ? 7 : 9) << ARM9ClockShift) - 1;
+            ARM9Timestamp += ARM9.DataCycles = (((block & 0x0400) ? 7 : 9) << ARM9ClockShift) - 1;
             MainRAMTimestamp += 9; // checkme?
-            ARM9.TimestampActual = 3 << ARM9ClockShift;
 
             MainRAMLastAccess = 0;
-            ARM9.ClearPtr++;
             if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+            
+            u8 reg = block & 0xFF;
+            //if ((reg < 15) && !(block & 0x0400)) ARM9.R[reg] = ARM9Read8(ARM9.DeferAddr[reg]);
+            ARM9.ClearPtr++;
             break;
         }
-        case 0x40: // code fetch
+        case 0x83: // code fetch
         {
             if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
             else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
 
             ARM9Timestamp += (9 << ARM9ClockShift) - 1;
             MainRAMTimestamp += 9;
+
             if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+
+            if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+            ARM9.ClearPtr++;
+            break;
         }
 
-        case 0xC0: // stream fetch
+
+        case 0x40: // 32 bit read
+        case 0x48:
+        case 0x44: // 32 bit write
+        case 0x4C:
         {
-            if (Async9Mode != 1)
+            u8 rgn = ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0x1F;
+            bool word = !(ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0xC000);
+
+            if (block & 0x0800)
             {
-                if ((CacheProgress < 8) && (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) + 1))) ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) + 1;
-                else
-                {
-                    ARM9Timestamp++;
-                    ARM9.ClearPtr++;
-                }
-            }
-            else if (CacheProgress < Async9Curr)
-            {
-                CheckAsync9 = 5;
+                ARM9Timestamp += ARM9MemTimingsRgn[rgn][2] << ARM9ClockShift;
+                ARM9.DataCycles = ((block & 0x4000) ? 3 : 2) << ARM9ClockShift;
             }
             else
             {
-                CheckAsync9 = 2;
-                Async9Goal++;
-                CacheProgress++;
+                ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+
+                ARM9Timestamp += ARM9.DataCycles = (ARM9MemTimingsRgn[rgn][word] << ARM9ClockShift) - 1;
+            }
+
+            u8 reg = block & 0xFF;
+            if ((reg < 15) && !(block & 0x0400))
+            {
+                /*
+                if (ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0xC000 == 0x8000) ARM9.R[reg] = ARM9Read16(ARM9.DeferAddr[reg]);
+                else if (ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0xC000 == 0x4000) ARM9.R[reg] = ARM9Read8(ARM9.DeferAddr[reg]);
+                else ARM9.R[reg] = ARM9Read32(ARM9.DeferAddr[reg]);*/
+            }
+            ARM9.ClearPtr += 2;
+            break;
+        }
+        case 0x42: // code fetch
+        {
+            u8 rgn = ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0x1F;
+            ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+
+            ARM9Timestamp += (ARM9MemTimingsRgn[rgn][1] << ARM9ClockShift) - 1;
+
+            if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+            ARM9.ClearPtr += 2;
+            break;
+        }
+
+
+        case 0xC0: // stream fetch
+        {
+            if (!ARM9.ICacheStreamMainRAM)
+            {
+                u8 streamptr = block & 0xF;
+                u64 nextfill = ARM9.ICacheFillTimes[streamptr];
+                if (ARM9Timestamp < nextfill)
+                {
+                    ARM9Timestamp = nextfill;
+                }
+                else
+                {
+                    u64 fillend = ARM9.ICacheFillTimes[6] + 2;
+                    if (ARM9Timestamp < fillend) ARM9Timestamp = fillend;
+                    else // checkme
+                    {
+                        if (ARM9Timestamp < ARM9.ITCMTimestamp) ARM9Timestamp = ARM9.ITCMTimestamp;
+                        ARM9Timestamp += 1;
+                    }
+                }
+                if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+                ARM9.DataRegion = Mem9_Null;
+                ARM9.Store = false;
+                ARM9.ClearPtr++;
+            }
+            else
+            {
+                if (Async9Mode != 1)
+                {
+                    if ((CacheProgress < 8) && (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) + 1))) ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) + 1;
+                    else
+                    {
+                        ARM9Timestamp++;
+                        ARM9.ClearPtr++;
+                    }
+                    if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+                }
+                else if (CacheProgress < Async9Curr)
+                {
+                    CheckAsync9 = 5;
+                }
+                else
+                {
+                    CheckAsync9 = 2;
+                    Async9Goal++;
+                    CacheProgress++;
+                }
             }
             break;
         }
         case 0xC1: // Instruction NS
         {
-            if (Async9Mode == 1)
+            if (!ARM9.ICacheStreamMainRAM)
             {
-                //printf("okc1\n");
-                CheckAsync9 = 3;
-                CacheProgress = Async9Goal = 8;
+                u64 fillend = ARM9.ICacheFillTimes[6] + 1;
+                if (ARM9Timestamp < fillend) ARM9Timestamp = fillend;
+                ARM9.ClearPtr++;
             }
             else
             {
-                u64 time = (Async9Timestamp << ARM9ClockShift);
-                if (ARM9Timestamp < time) ARM9Timestamp = time;
-                ARM9.ClearPtr++;
+                if (Async9Mode == 1)
+                {
+                    //printf("okc1\n");
+                    CheckAsync9 = 3;
+                    CacheProgress = Async9Goal = 8;
+                }
+                else
+                {
+                    u64 time = (Async9Timestamp << ARM9ClockShift);
+                    if (ARM9Timestamp < time) ARM9Timestamp = time;
+                    ARM9.ClearPtr++;
+                }
             }
             break;
         }
         case 0xC2: // Data Bus Access
         {
-            if (Async9Mode == 1)
+            if (!ARM9.ICacheStreamMainRAM)
             {
-                CheckAsync9 = 4;
-                CacheProgress = Async9Goal = 8;
+                u64 time = ARM9.ICacheFillTimes[6] - 6;
+                if (ARM9Timestamp < time) ARM9Timestamp = time;
+                ARM9.ClearPtr++;
             }
-            else ARM9.ClearPtr++;
+            else
+            {
+                if (Async9Mode == 1)
+                {
+                    CheckAsync9 = 4;
+                    CacheProgress = Async9Goal = 8;
+                }
+                else ARM9.ClearPtr++;
+            }
             break;
         }
         case 0xC3: // ICache Stream Start
         {
+            ARM9.ICacheStreamMainRAM = true;
             Async9Mode = 1;
             CheckAsync9 = 1;
             u64 time = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
@@ -1111,64 +1232,113 @@ void NDS::RunMainRAM9()
             Async9Curr = 0;
             break;
         }
+        case 0xC4:
+        {
+            // timing logic
+            ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+            
+            /*if (((ARM9Timestamp <= WBReleaseTS) && (NDS.ARM9Regions[addr>>14] == WBLastRegion)) // check write buffer // TODO: REIMPLEMENT!!!!
+                ||*/ //if (ARM9.Store && (ARM9Regions[addr>>14] == ARM9.DataRegion)) // check the actual store
+                    //ARM9Timestamp += 1<<ARM9ClockShift;
+            ARM9.Store = false;
+
+            u8 rgn = ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0x1F;
+            // todo: maybe simplify cache streaming logic for non-branch accesses?
+            u8 ns = ARM9MemTimingsRgn[rgn][1];
+            u8 seq = ARM9MemTimingsRgn[rgn][2];
+
+            u8 linepos = (block & 0xF) - 1;
+
+            u64 cycles = ns + (seq * linepos);
+            ARM9Timestamp += cycles;
+            cycles = ARM9Timestamp;
+
+            for (int i = linepos+1; i < 7; i++)
+            {
+                cycles += seq;
+                ARM9.ICacheFillTimes[i] = cycles;
+            }
+            ARM9.ICacheStreamMainRAM = false;
+            ARM9.DataRegion = Mem9_Null;
+            ARM9.ClearPtr += 2;
+            break;
+        }
         
+
         case 0x20: // stream fetch
         {
-            /*if (Async9Mode != 1)
+            if (!ARM9.DCacheStreamMainRAM)
             {
-                if ((CacheProgress < 8) && (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) + 1))) ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) + 1;
-                else
-                {
-                    ARM9Timestamp++;
-                    ARM9.ClearPtr++;
-                }
-            }
-            else if (CacheProgress < Async9Curr)
-            {
-                CheckAsync9 = 5;
-            }
-            else*/
-            if (Async9Mode != 2)
-            {
-                ARM9Timestamp++;
+                u8 streamptr = block & 0xF;
+                u64 nextfill = ARM9.DCacheFillTimes[streamptr];
+                ARM9.DataCycles = nextfill - ARM9Timestamp;
+                ARM9Timestamp = nextfill;
+                ARM9.DataRegion = Mem9_DCache;
                 ARM9.ClearPtr++;
             }
             else
             {
-                CheckAsync9 = 2;
-                Async9Goal++;
-                CacheProgress++;
+                if (Async9Mode != 2)
+                {
+                    ARM9Timestamp++;
+                    ARM9.ClearPtr++;
+                }
+                else
+                {
+                    CheckAsync9 = 2;
+                    Async9Goal++;
+                    CacheProgress++;
+                }
             }
             break;
         }
         case 0x21: // Instruction Bus Access
         {
-            if (Async9Mode == 2)
+            if (!ARM9.DCacheStreamMainRAM)
             {
-                CheckAsync9 = 4;
-                CacheProgress = Async9Goal = 8;
+                u64 time = ARM9.DCacheFillTimes[6] - 6;
+                if (ARM9Timestamp < time) ARM9Timestamp = time;
+                ARM9.ClearPtr++;
             }
-            else ARM9.ClearPtr++;
+            else
+            {
+                if (Async9Mode == 2)
+                {
+                    CheckAsync9 = 4;
+                    CacheProgress = Async9Goal = 8;
+                }
+                else ARM9.ClearPtr++;
+            }
             break;
         }
         case 0x22: // Data NS
         {
-            if (Async9Mode == 2)
+            if (!ARM9.DCacheStreamMainRAM)
             {
-                //printf("ok22\n");
-                CheckAsync9 = 3;
-                CacheProgress = Async9Goal = 8;
+                u64 fillend = ARM9.DCacheFillTimes[6] + 1;
+                if (ARM9Timestamp < fillend) ARM9Timestamp = fillend; // checkme: should this be data cycles?
+                ARM9.ClearPtr++;
             }
             else
             {
-                u64 time = (Async9Timestamp << ARM9ClockShift);
-                if (ARM9Timestamp < time) ARM9Timestamp = time;
-                ARM9.ClearPtr++;
+                if (Async9Mode == 2)
+                {
+                    //printf("ok22\n");
+                    CheckAsync9 = 3;
+                    CacheProgress = Async9Goal = 8;
+                }
+                else
+                {
+                    u64 time = (Async9Timestamp << ARM9ClockShift);
+                    if (ARM9Timestamp < time) ARM9Timestamp = time;
+                    ARM9.ClearPtr++;
+                }
             }
             break;
         }
         case 0x23: // DCache Stream Fetch
         {
+            ARM9.DCacheStreamMainRAM = true;
             Async9Mode = 2;
             CheckAsync9 = 1;
             u64 time = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
@@ -1176,6 +1346,36 @@ void NDS::RunMainRAM9()
             //else ARM9Timestamp = Async9Timestamp >> ARM9ClockShift;
             CacheProgress = Async9Goal = block & 0xFF;
             Async9Curr = 0;
+            break;
+        }
+        case 0x24:
+        {
+            //if ((ARM9Timestamp <= WBReleaseTS) && (DataRegion == WBLastRegion)) // check write buffer
+            //    ARM9Timestamp += 1<<ARM9ClockShift; // TODO: REIMPLEMENT!!!!!
+
+            ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
+            
+            u8 rgn = ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0x1F;
+            u8 ns = ARM9MemTimingsRgn[rgn][1];
+            u8 seq = ARM9MemTimingsRgn[rgn][2];
+            ARM9.DataRegion = 1 << rgn;
+
+            u8 linepos = (block & 0xF) - 1;
+
+            u64 cycles = ns + (seq * linepos);
+
+            ARM9.DataCycles = cycles;
+            ARM9Timestamp += cycles;
+            cycles = ARM9Timestamp;
+
+
+            for (int i = linepos; i < 7; i++)
+            {
+                cycles += seq;
+                ARM9.DCacheFillTimes[i] = cycles;
+            }
+            ARM9.DCacheStreamMainRAM = false;
+            ARM9.ClearPtr += 2;
             break;
         }
 
@@ -1240,47 +1440,53 @@ void NDS::RunMainRAM9()
             break;
         }
 
-        case 0x60:
+
+        case 0x60: // execute stage
         {
-            u8 reg = block & 0xFF;
-            ARM9.TimingBlocks[0] = 0;
-            ARM9.R[reg] = ARM9Read32(ARM9.DeferAddr[reg]);
+            ARM9Timestamp += (s8)block;
             ARM9.ClearPtr++;
             break;
         }
         case 0x61:
         {
-            u8 reg = block & 0xFF;
-            ARM9.TimingBlocks[0] = 0;
-            ARM9.R[reg] = ARM9Read16(ARM9.DeferAddr[reg]);
+            s8 numM = (s8)block;
+            ARM9.TimestampActual = numM + ARM9Timestamp;
+
+            numM -= 3<<ARM9ClockShift;
+
+            if (numM > 0) ARM9.TimestampActual += numM;
             ARM9.ClearPtr++;
             break;
         }
         case 0x62:
         {
-            u8 reg = block & 0xFF;
-            ARM9.TimingBlocks[0] = 0;
-            ARM9.R[reg] = ARM9Read8(ARM9.DeferAddr[reg]);
+            ARM9.TimestampActual = ARM9Timestamp;
+
+            s8 overlap = std::min(ARM9.DataCycles, 3<<ARM9ClockShift);
+
+            ARM9Timestamp -= overlap;
             ARM9.ClearPtr++;
             break;
         }
-        case 0x63:
-        {
-            ARM9.TimingBlocks[0] = 0;
-            ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[16]);
-            ARM9.ClearPtr++;
-            break;
-        }
+
 
         default: // error handler
         {
-            printf("CRYING2 %04X, %08X\n", block, ARM9.CurInstr);
-            ARM9.ClearPtr++;
+            printf("CRYING2 %04X, %08X, %i, %i\n", block, ARM9.CurInstr, ARM9.TimingPtr, ARM9.ClearPtr);
+            //ARM9.ClearPtr++;
             break;
         }
     }
-
-    RunCycles(&ARM9, &ARM9Timestamp);
+    if (ARM9.ClearPtr >= ARM9.TimingPtr)
+    {
+        ARM9.ClearPtr = 0;
+        ARM9.TimingPtr = 0;
+        block = 0;
+    }
+    else block = ARM9.TimingBlocks[ARM9.ClearPtr];
+    }
+    while (((block >> 12) == 0x4) || ((((block >> 12) == 0xC) && !ARM9.ICacheStreamMainRAM) || ((block >> 8) == 0xC4)) ||  ((((block >> 12) == 0x2) && !ARM9.DCacheStreamMainRAM) || ((block >> 8) == 0x24)) || ((block >> 12) == 0x6));
+    //RunCycles(&ARM9, &ARM9Timestamp);
 }
 
 void NDS::RunARM9WriteBuffer()
@@ -1307,6 +1513,7 @@ void NDS::RunARM9WriteBuffer()
             {
                 if (MainRAMTimestamp > Async9Timestamp) Async9Timestamp = MainRAMTimestamp;
                 MainRAMTimestamp = Async9Timestamp + 8;
+
                 cycles = 4;
             }
             else cycles = (ARM9.MemTimings[WBAddr>>14][0] - 3) >> ARM9ClockShift; // todo: twl timings
@@ -1341,6 +1548,7 @@ void NDS::RunARM9WriteBuffer()
         }
 
         Async9Timestamp += cycles;
+        if ((ARM9Regions[WBAddr>>14] == Mem9_MainRAM) && (ARM7.TimingPtr != 0) && (ARM7Timestamp < Async9Timestamp)) ARM7Timestamp = Async9Timestamp;
 
         switch (WBCurr >> 61)
         {
@@ -1429,6 +1637,10 @@ void NDS::RunMainRAM9Async()
                             {
                                 u64 time = (Async9Timestamp << ARM9ClockShift) + 1;
                                 if (ARM9Timestamp < time) ARM9Timestamp = time;
+                                if (Async9Mode == 1)
+                                {
+                                    if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+                                }
                                 break;
                             }
                             else
@@ -1441,6 +1653,10 @@ void NDS::RunMainRAM9Async()
                         else
                         {
                             ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) - 1;
+                            if (Async9Mode == 1)
+                            {
+                                if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+                            }
                         }
                         ARM9.ClearPtr++;
                         break;
@@ -1463,6 +1679,10 @@ void NDS::RunMainRAM9Async()
                     {
                         u64 time = (Async9Timestamp << ARM9ClockShift) + 1;
                         if (ARM9Timestamp < time) ARM9Timestamp = time;
+                        if (Async9Mode == 1)
+                        {
+                            if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+                        }
                         ARM9.ClearPtr++;
                         break;
                     }
@@ -1479,6 +1699,7 @@ void NDS::RunMainRAM9Async()
                 }
                 CheckAsync9 = 0;
             }
+            if ((ARM7.TimingPtr != 0) && ARM7Timestamp < Async9Timestamp) ARM7Timestamp = Async9Timestamp;
             break;
         }
 
@@ -1530,7 +1751,7 @@ void NDS::RunMainRAM9Async()
                         RunARM9WriteBuffer();
                         if (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) - 1))
                             ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) - 1;
-                        if (WBActive && ((WBFifo[WBWritePtr] >> 61) == 3))
+                        if (WBActive && ((WBCurr >> 61) == 3))
                         {
                             CheckAsync9 = 4;
                         }
@@ -1559,7 +1780,7 @@ void NDS::RunMainRAM9Async()
                     RunARM9WriteBuffer();
                     if (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) - 1))
                             ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) - 1;
-                    if (WBActive && ((WBFifo[WBWritePtr] >> 61) != 3))
+                    if (WBActive && ((WBCurr >> 61) != 3))
                     {
                         CheckAsync9 = 0;
                         ARM9.ClearPtr++;
@@ -1588,16 +1809,20 @@ void NDS::RunMainRAM9Async()
             return;
         }
     }
-    
-    RunCycles(&ARM9, &ARM9Timestamp);
-    if ((ARM7.TimingPtr != 0) && ARM7Timestamp < Async9Timestamp) ARM7Timestamp = Async9Timestamp;
+    if (ARM9.ClearPtr >= ARM9.TimingPtr)
+    {
+        ARM9.ClearPtr = 0;
+        ARM9.TimingPtr = 0;
+    }
+    //RunCycles(&ARM9, &ARM9Timestamp);
+    //if ((ARM7.TimingPtr != 0) && ARM7Timestamp < Async9Timestamp) ARM7Timestamp = Async9Timestamp;
 }
 
 void NDS::ResolveMainRAM()
 {
     if (ARM7.TimingPtr == 0 && ARM9.TimingPtr == 0) return;
 
-    if (ARM9.TimingPtr != 0) RunCycles(&ARM9, &ARM9Timestamp);
+    //if (ARM9.TimingPtr != 0) RunCycles(&ARM9, &ARM9Timestamp);
     if (ARM7.TimingPtr != 0) RunCycles(&ARM7, &ARM7Timestamp);
     
 
@@ -1794,7 +2019,7 @@ u32 NDS::RunFrame()
 
         if (GPU.TotalScanlines == 0)
             continue;
-            
+
 #ifdef DEBUG_CHECK_DESYNC
         Log(LogLevel::Debug, "[%08X%08X] ARM9=%ld, ARM7=%ld, GPU=%ld\n",
             (u32)(SysTimestamp>>32), (u32)SysTimestamp,
@@ -2088,8 +2313,8 @@ void NDS::SetGBASlotTimings()
     }
     else
     {
-        SetARM9RegionTimings(0x08000, 0x0A000, 0, 32, 1, 1);
-        SetARM9RegionTimings(0x0A000, 0x0B000, 0, 32, 1, 1);
+        SetARM9RegionTimings(0x08000, 0x0A000, Mem9_BG, 32, 1, 1);
+        SetARM9RegionTimings(0x0A000, 0x0B000, Mem9_BG, 32, 1, 1);
 
         SetARM7RegionTimings(0x08000, 0x0A000, Mem7_GBAROM, 16, romN, romS);
         SetARM7RegionTimings(0x0A000, 0x0B000, Mem7_GBARAM, 8, ramN, ramN);
@@ -2407,7 +2632,7 @@ void NDS::RunTimers(u32 cpu)
     s32 cycles;
 
     if (cpu == 0)
-        cycles = ((ARM9Timestamp + ARM9.TimingBlocks[0] + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) - TimerTimestamp[0];
+        cycles = ((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) - TimerTimestamp[0];
     else
         cycles = ARM7Timestamp - TimerTimestamp[1];
 

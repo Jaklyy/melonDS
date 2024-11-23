@@ -196,6 +196,7 @@ enum
     Mem9_VRAM       = 0x00000100,
     Mem9_GBAROM     = 0x00020000,
     Mem9_GBARAM     = 0x00040000,
+    Mem9_BG         = 0x20000000,
     Mem9_DCache     = 0x40000000,
     Mem9_Null       = 0x80000000,
 
@@ -246,6 +247,7 @@ public: // TODO: Encapsulate the rest of these members
 
     SchedEvent SchedList[Event_MAX] {};
     u8 ARM9MemTimings[0x40000][8];
+    u8 ARM9MemTimingsRgn[32][3];
     u32 ARM9Regions[0x40000];
     u8 ARM7MemTimings[0x20000][4];
     u32 ARM7Regions[0x20000];
