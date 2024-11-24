@@ -1027,8 +1027,13 @@ void NDS::RunMainRAM9()
             MainRAMLastAccess = 0;
             if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
             
-            u8 reg = block & 0xFF;
-            //if ((reg < 15) && !(block & 0x0400)) ARM9.R[reg] = ARM9Read32(ARM9.DeferAddr[reg]);
+            u8 reg = block & 0x7F;
+            if ((reg < 15) && !(block & 0x0400))
+            {
+                u32 addr = ARM9.DeferAddr[reg];
+                ARM9.R[reg] = ARM9Read32(addr & ~3);
+                if (block & 0x80) ARM9.R[reg] = (ARM9.R[reg] >> (((addr&0x3)*8)&0x1F)) | (ARM9.R[reg] << ((32-((addr&0x3)*8))&0x1F));
+            }
             ARM9.ClearPtr++;
             break;
         }
@@ -1044,8 +1049,12 @@ void NDS::RunMainRAM9()
             MainRAMLastAccess = 0;
             if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
             
-            u8 reg = block & 0xFF;
-            //if ((reg < 15) && !(block & 0x0400)) ARM9.R[reg] = ARM9Read16(ARM9.DeferAddr[reg]);
+            u8 reg = block & 0x7F;
+            if ((reg < 15) && !(block & 0x0400))
+            {
+                ARM9.R[reg] = ARM9Read16(ARM9.DeferAddr[reg]);
+                if (block & 0x80) ARM9.R[reg] = (s32)(s16)ARM9.R[reg];
+            }
             ARM9.ClearPtr++;
             break;
         }
@@ -1061,8 +1070,12 @@ void NDS::RunMainRAM9()
             MainRAMLastAccess = 0;
             if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
             
-            u8 reg = block & 0xFF;
-            //if ((reg < 15) && !(block & 0x0400)) ARM9.R[reg] = ARM9Read8(ARM9.DeferAddr[reg]);
+            u8 reg = block & 0x7F;
+            if ((reg < 15) && !(block & 0x0400))
+            {
+                ARM9.R[reg] = ARM9Read8(ARM9.DeferAddr[reg]);
+                if (block & 0x80) ARM9.R[reg] = (s32)(s8)ARM9.R[reg];
+            }
             ARM9.ClearPtr++;
             break;
         }
@@ -1102,13 +1115,26 @@ void NDS::RunMainRAM9()
                 ARM9Timestamp += ARM9.DataCycles = (ARM9MemTimingsRgn[rgn][word] << ARM9ClockShift) - 1;
             }
 
-            u8 reg = block & 0xFF;
+            u8 reg = block & 0x7F;
             if ((reg < 15) && !(block & 0x0400))
             {
-                /*
-                if (ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0xC000 == 0x8000) ARM9.R[reg] = ARM9Read16(ARM9.DeferAddr[reg]);
-                else if (ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0xC000 == 0x4000) ARM9.R[reg] = ARM9Read8(ARM9.DeferAddr[reg]);
-                else ARM9.R[reg] = ARM9Read32(ARM9.DeferAddr[reg]);*/
+                
+                if (ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0x8000)
+                {
+                    ARM9.R[reg] = ARM9Read16(ARM9.DeferAddr[reg]);
+                    if (block & 0x80) ARM9.R[reg] = (s32)(s16)ARM9.R[reg];
+                }
+                else if (ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0x4000)
+                {
+                    ARM9.R[reg] = ARM9Read8(ARM9.DeferAddr[reg]);
+                    if (block & 0x80) ARM9.R[reg] = (s32)(s8)ARM9.R[reg];
+                }
+                else
+                {
+                    u32 addr = ARM9.DeferAddr[reg];
+                    ARM9.R[reg] = ARM9Read32(addr & ~3);
+                    if (block & 0x80) ARM9.R[reg] = (ARM9.R[reg] >> (((addr&0x3)*8)&0x1F)) | (ARM9.R[reg] << ((32-((addr&0x3)*8))&0x1F));
+                }
             }
             ARM9.ClearPtr += 2;
             break;

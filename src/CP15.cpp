@@ -2422,14 +2422,8 @@ bool ARMv5::DataRead8(u32 addr, u32* val, u8 reg)
     if ((addr >> 24) == 0x02)
     {
         TimingBlocks[TimingPtr++] = 0x8200 | reg;
-        DeferAddr[reg] = addr;
-        /*
-        //if (NDS.ARM9Timestamp < MainRAMTimestamp) NDS.ARM9Timestamp = (MainRAMTimestamp + ((1<<NDS.ARM9ClockShift)-1)) & ~((1<<NDS.ARM9ClockShift)-1);
-        //MainRAMTimestamp = NDS.ARM9Timestamp + DataCycles;
-        if (NDS.ARM9ClockShift == 2) DataCycles -= 4;
-        DataRegion = Mem9_MainRAM;*/
-
-        *val = BusRead8(addr);
+        DeferAddr[reg&0xF] = addr;
+        if ((reg&0x7F) >= 15) *val = BusRead8(addr);
     }
     else
     {
@@ -2437,7 +2431,8 @@ bool ARMv5::DataRead8(u32 addr, u32* val, u8 reg)
         {
             TimingBlocks[TimingPtr++] = 0x4000 | reg;
             TimingBlocks[TimingPtr++] = 0x4000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
-            DeferAddr[reg] = addr;
+            DeferAddr[reg&0xF] = addr;
+            if ((reg&0x7F) >= 15) *val = BusRead8(addr);
         }
         else
         {
@@ -2445,6 +2440,8 @@ bool ARMv5::DataRead8(u32 addr, u32* val, u8 reg)
 
             NDS.ARM9Timestamp += DataCycles = MemTimings[addr >> 14][0];
             DataRegion = NDS.ARM9Regions[addr>>14];
+
+            *val = BusRead8(addr);
 
             //if ((NDS.ARM9Timestamp <= WBReleaseTS) && (DataRegion == WBLastRegion)) // check write buffer
             //    NDS.ARM9Timestamp += 1<<NDS.ARM9ClockShift;
@@ -2456,7 +2453,6 @@ bool ARMv5::DataRead8(u32 addr, u32* val, u8 reg)
         TimingBlocks[TimingPtr++] = 0xA400;
     }
 
-    *val = BusRead8(addr);
     return true;
 }
 
@@ -2563,12 +2559,8 @@ bool ARMv5::DataRead16(u32 addr, u32* val, u8 reg)
     if ((addr >> 24) == 0x02)
     {
         TimingBlocks[TimingPtr++] = 0x8100 | reg;
-        DeferAddr[reg] = addr;
-        /*
-        //if (NDS.ARM9Timestamp < MainRAMTimestamp) NDS.ARM9Timestamp = (MainRAMTimestamp + ((1<<NDS.ARM9ClockShift)-1)) & ~((1<<NDS.ARM9ClockShift)-1);
-        //MainRAMTimestamp = NDS.ARM9Timestamp + DataCycles;
-        if (NDS.ARM9ClockShift == 2) DataCycles -= 4;
-        DataRegion = Mem9_MainRAM;*/
+        DeferAddr[reg&0xF] = addr;
+        if ((reg&0x7F) >= 15) *val = BusRead16(addr);
     }
     else
     {
@@ -2576,7 +2568,8 @@ bool ARMv5::DataRead16(u32 addr, u32* val, u8 reg)
         {
             TimingBlocks[TimingPtr++] = 0x4000 | reg;
             TimingBlocks[TimingPtr++] = 0x8000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
-            DeferAddr[reg] = addr;
+            DeferAddr[reg&0xF] = addr;
+            if ((reg&0x7F) >= 15) *val = BusRead16(addr);
         }
         else
         {
@@ -2584,6 +2577,9 @@ bool ARMv5::DataRead16(u32 addr, u32* val, u8 reg)
 
             NDS.ARM9Timestamp += DataCycles = MemTimings[addr >> 14][0];
             DataRegion = NDS.ARM9Regions[addr>>14];
+
+            *val = BusRead16(addr);
+
             //if ((NDS.ARM9Timestamp <= WBReleaseTS) && (DataRegion == WBLastRegion)) // check write buffer
             //    NDS.ARM9Timestamp += 1<<NDS.ARM9ClockShift;
         }
@@ -2594,7 +2590,6 @@ bool ARMv5::DataRead16(u32 addr, u32* val, u8 reg)
         TimingBlocks[TimingPtr++] = 0xA400;
     }
         
-    *val = BusRead16(addr);
     return true;
 }
 
@@ -2631,8 +2626,6 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
         return false;
     }
 
-    addr &= ~3;
-
     if (addr < ITCMSize)
     {
         if (TimingPtr > 0)
@@ -2646,7 +2639,7 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
             ITCMTimestamp = NDS.ARM9Timestamp;
             DataRegion = Mem9_ITCM;
         }
-        *val = *(u32*)&ITCM[addr & (ITCMPhysicalSize - 1)];
+        *val = *(u32*)&ITCM[addr & (ITCMPhysicalSize - 1) & ~3];
         return true;
     }
     if ((addr & DTCMMask) == DTCMBase)
@@ -2661,7 +2654,7 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
             NDS.ARM9Timestamp += DataCycles = 1;
             DataRegion = Mem9_DTCM;
         }
-        *val = *(u32*)&DTCM[addr & (DTCMPhysicalSize - 1)];
+        *val = *(u32*)&DTCM[addr & (DTCMPhysicalSize - 1) & ~3];
         return true;
     }
 
@@ -2672,7 +2665,7 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
         {
             if (IsAddressDCachable(addr))
             {
-                *val = DCacheLookup(addr);
+                *val = DCacheLookup(addr & ~3);
                 return true;
             }
         }
@@ -2701,11 +2694,8 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
     if ((addr >> 24) == 0x02)
     {
         TimingBlocks[TimingPtr++] = 0x8000 | reg;
-        DeferAddr[reg] = addr;
-        /*//if (NDS.ARM9Timestamp < MainRAMTimestamp) NDS.ARM9Timestamp = (MainRAMTimestamp + ((1<<NDS.ARM9ClockShift)-1)) & ~((1<<NDS.ARM9ClockShift)-1);
-        //MainRAMTimestamp = NDS.ARM9Timestamp + DataCycles;
-        if (NDS.ARM9ClockShift == 2) DataCycles -= 4;
-        DataRegion = Mem9_MainRAM;*/
+        DeferAddr[reg&0xF] = addr;
+        if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
     }
     else
     {
@@ -2713,7 +2703,8 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
         {
             TimingBlocks[TimingPtr++] = 0x4000 | reg;
             TimingBlocks[TimingPtr++] = 0x0000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
-            DeferAddr[reg] = addr;
+            DeferAddr[reg&0xF] = addr;
+            if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
         }
         else
         {
@@ -2721,6 +2712,9 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
         
             NDS.ARM9Timestamp += DataCycles = MemTimings[addr >> 14][1];
             DataRegion = NDS.ARM9Regions[addr>>14];
+
+            *val = BusRead32(addr & ~3);
+
             //if ((NDS.ARM9Timestamp <= WBReleaseTS) && (DataRegion == WBLastRegion)) // check write buffer
             //    NDS.ARM9Timestamp += 1<<NDS.ARM9ClockShift;
         }
@@ -2731,7 +2725,6 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
         TimingBlocks[TimingPtr++] = 0xA400;
     }
 
-    *val = BusRead32(addr);
     return true;
 }
 
@@ -2754,8 +2747,6 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
         return false;
     }
 
-    addr &= ~3;
-
     if (addr < ITCMSize)
     {
         if (TimingPtr > 0)
@@ -2769,7 +2760,7 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
             // we update the timestamp during the actual function, as a sequential itcm access can only occur during instructions with strange itcm wait cycles
             DataRegion = Mem9_ITCM;
         }
-        *val = *(u32*)&ITCM[addr & (ITCMPhysicalSize - 1)];
+        *val = *(u32*)&ITCM[addr & (ITCMPhysicalSize - 1) & ~3];
         return true;
     }
     if ((addr & DTCMMask) == DTCMBase)
@@ -2784,7 +2775,7 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
             NDS.ARM9Timestamp += DataCycles = 1;
             DataRegion = Mem9_DTCM;
         }
-        *val = *(u32*)&DTCM[addr & (DTCMPhysicalSize - 1)];
+        *val = *(u32*)&DTCM[addr & (DTCMPhysicalSize - 1) & ~3];
         return true;
     }
 
@@ -2795,7 +2786,7 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
         {
             if (IsAddressDCachable(addr))
             {
-                *val = DCacheLookup(addr);
+                *val = DCacheLookup(addr & ~3);
                 return true;
             }
         }
@@ -2807,10 +2798,8 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
         if ((addr >> 24) == 0x02)
         {
             TimingBlocks[TimingPtr++] = 0x8800 | reg;
-            DeferAddr[reg] = addr;
-            /*//MainRAMTimestamp = NDS.ARM9Timestamp + DataCycles;
-            //if (NDS.ARM9ClockShift == 2) MainRAMTimestamp += 4;
-            DataRegion = Mem9_MainRAM;*/
+            DeferAddr[reg&0xF] = addr;
+            if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
         }
         else
         {
@@ -2818,12 +2807,16 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
             {
                 TimingBlocks[TimingPtr++] = 0x4800 | reg;
                 TimingBlocks[TimingPtr++] = 0x0000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
-                DeferAddr[reg] = addr;
+                DeferAddr[reg&0xF] = addr;
+                if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
             }
             else
             {
                 NDS.ARM9Timestamp += DataCycles = MemTimings[addr>>14][2];
                 DataRegion = NDS.ARM9Regions[addr>>14];
+
+                *val = BusRead32(addr & ~3);
+
                 //if ((NDS.ARM9Timestamp <= WBReleaseTS) && (DataRegion == WBLastRegion)) // check write buffer
                 //    NDS.ARM9Timestamp += 1<<NDS.ARM9ClockShift;
             }
@@ -2854,11 +2847,8 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
         if ((addr >> 24) == 0x02)
         {
             TimingBlocks[TimingPtr++] = 0x8000 | reg;
-            DeferAddr[reg] = addr;
-            /*//if (NDS.ARM9Timestamp < MainRAMTimestamp) NDS.ARM9Timestamp = (MainRAMTimestamp + ((1<<NDS.ARM9ClockShift)-1)) & ~((1<<NDS.ARM9ClockShift)-1);
-            //MainRAMTimestamp = NDS.ARM9Timestamp + DataCycles;
-            if (NDS.ARM9ClockShift == 2) DataCycles -= 4;
-            DataRegion = Mem9_MainRAM;*/
+            DeferAddr[reg&0xF] = addr;
+            if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
         }
         else
         {
@@ -2866,7 +2856,8 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
             {
                 TimingBlocks[TimingPtr++] = 0x4000 | reg;
                 TimingBlocks[TimingPtr++] = 0x0000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
-                DeferAddr[reg] = addr;
+                DeferAddr[reg&0xF] = addr;
+                if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
             }
             else
             {
@@ -2874,6 +2865,9 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
         
                 NDS.ARM9Timestamp += DataCycles = MemTimings[addr >> 14][1];
                 DataRegion = NDS.ARM9Regions[addr>>14];
+
+                *val = BusRead32(addr & ~3);
+
                 //if ((NDS.ARM9Timestamp <= WBReleaseTS) && (DataRegion == WBLastRegion)) // check write buffer
                 //    NDS.ARM9Timestamp += 1<<NDS.ARM9ClockShift;
             }
@@ -2885,7 +2879,6 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
         TimingBlocks[TimingPtr++] = 0xA400;
     }
 
-    *val = BusRead32(addr);
     return true;
 }
 

@@ -98,9 +98,9 @@ void LoadSingle(ARM* cpu, const u8 rd, const u8 rn, const s32 offset, const u16 
 
     u32 val;
     bool dabort;
-    if constexpr (size == 8)  dabort = !cpu->DataRead8 (addr, &val, rd);
-    if constexpr (size == 16) dabort = !cpu->DataRead16(addr, &val, rd);
-    if constexpr (size == 32) dabort = !cpu->DataRead32(addr, &val, rd);
+    if constexpr (size == 8)  dabort = !cpu->DataRead8 (addr, &val, rd | (signextend ? 0x80 : 0));
+    if constexpr (size == 16) dabort = !cpu->DataRead16(addr, &val, rd | (signextend ? 0x80 : 0));
+    if constexpr (size == 32) dabort = !cpu->DataRead32(addr, &val, rd | 0x80);
 
     if constexpr (writeback == Writeback::Trans)
     {
