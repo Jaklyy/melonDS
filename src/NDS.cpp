@@ -948,7 +948,6 @@ void NDS::RunCycles(ARM* cpu, u64* ts)
 void NDS::RunMainRAM7()
 {
     u16 block = ARM7.TimingBlocks[ARM7.ClearPtr];
-    //printf("7 %04X\n", block);
     if (block >> 8)
     {
         if (((ARM7.CurCnt > 0) || (block & 0x4000)) && MainRAMLastAccess) // try to continue burst
@@ -999,7 +998,6 @@ void NDS::RunMainRAM9()
     u16 block = ARM9.TimingBlocks[ARM9.ClearPtr];
     do
     {
-    //printf("9 %04X %08X\n", block, ARM9.CurInstr);
     switch (block >> 8)
     {
         //case 0x00: ARM9.ClearPtr++; break; // somehow a normal timing block got into the system, just ignore it.
@@ -1235,7 +1233,6 @@ void NDS::RunMainRAM9()
             {
                 if (Async9Mode == 1)
                 {
-                    //printf("okc1\n");
                     CheckAsync9 = 3;
                     CacheProgress = Async9Goal = 8;
                 }
@@ -1368,7 +1365,6 @@ void NDS::RunMainRAM9()
             {
                 if (Async9Mode == 2)
                 {
-                    //printf("ok22\n");
                     CheckAsync9 = 3;
                     CacheProgress = Async9Goal = 8;
                 }
@@ -1444,7 +1440,7 @@ void NDS::RunMainRAM9()
                 WBFifo[WBFillPtr] = ARM9.WriteBufferQueue[ARM9.WBQueueRead];
                 WBFillPtr = (WBFillPtr + 1) & 0xF;
                 ARM9.WBQueueRead += 1;
-                //printf("WBQueuePtr %i\n", ARM9.WBQueuePtr);
+
                 if (ARM9.WBQueueRead == ARM9.WBQueuePtr)
                 {
                     ARM9.WBQueueRead = 0;
@@ -1465,7 +1461,6 @@ void NDS::RunMainRAM9()
         }
         case 0xA2: // WB Wait (Read)
         {   
-            //printf("oka2\n");
             if (Async9Mode != 3) ARM9.ClearPtr++;
             else CheckAsync9 = 3;
             break;
@@ -1698,7 +1693,6 @@ void NDS::RunARM9WriteBuffer()
 
 void NDS::RunMainRAM9Async()
 {
-    //printf("async %i %i\n", Async9Mode, CheckAsync9);
     switch(Async9Mode)
     {
         case 1: // ICache Logic
@@ -1715,14 +1709,12 @@ void NDS::RunMainRAM9Async()
                 MainRAMLastAccess = 0;
             }
             Async9Curr++;
-            //printf("Async9Curr");
             if (Async9Curr >= Async9Goal)
             {
                 switch (CheckAsync9)
                 {
                     case 0: // non-forced
                     {
-                        //printf("This can trigger apparently?\n%04X\n", ARM9.TimingBlocks[ARM9.ClearPtr]);
                         break;
                     }
                     case 1: // Initial Fetch
@@ -1811,7 +1803,6 @@ void NDS::RunMainRAM9Async()
             {
                 case 0:
                 {
-                    //printf("cringe 1\n");
                     RunARM9WriteBuffer();
                     if (!WBActive)
                     {
@@ -1821,7 +1812,6 @@ void NDS::RunMainRAM9Async()
                 }
                 case 1:
                 {
-                    //printf("cringe 2\n");
                     RunARM9WriteBuffer();
                     if (WBWritePtr != WBFillPtr)
                     {
@@ -1833,7 +1823,6 @@ void NDS::RunMainRAM9Async()
                 }
                 case 2:
                 {
-                    //printf("cringe 3\n");
                     RunARM9WriteBuffer();
                     if (!WBActive)
                     {
@@ -1847,7 +1836,6 @@ void NDS::RunMainRAM9Async()
                 }
                 case 3:
                 {
-                    //printf("cringe 4\n");
                     if (ARM9Timestamp >= Async9Timestamp << ARM9ClockShift)
                     {
                         RunARM9WriteBuffer();
@@ -1878,7 +1866,6 @@ void NDS::RunMainRAM9Async()
                 }
                 case 4:
                 {
-                    //printf("cringe 5\n");
                     RunARM9WriteBuffer();
                     if (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) - 1))
                             ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) - 1;
@@ -1934,7 +1921,6 @@ void NDS::ResolveMainRAM()
         while (((ARM7.TimingPtr != 0) && (ARM7Timestamp <= ((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))) ||
                ((ARM9.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) < ARM7Timestamp)))
         {
-            //printf("loop purgatory %i %i", CheckAsync9, Async9Mode);
             while ((ARM7.TimingPtr != 0) && (ARM7Timestamp <= ((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift)) && ((Async9Mode == 0) || (ARM7Timestamp <= Async9Timestamp)))
             {
                 RunMainRAM7();
@@ -1956,7 +1942,6 @@ void NDS::ResolveMainRAM()
         while (((ARM7.TimingPtr != 0) && (ARM7Timestamp < ((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))) ||
                ((ARM9.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) <= ARM7Timestamp)))
         {
-            //printf("loop purgatory %i %i", CheckAsync9, Async9Mode);
             while ((ARM9.TimingPtr != 0) && !CheckAsync9 && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) <= ARM7Timestamp))
             {
                 RunMainRAM9();
@@ -2075,15 +2060,12 @@ u32 NDS::RunFrame()
 
                 RunTimers(0);
                 GPU.GPU3D.Run();
-                //printf("9 ARM9: %lli %08X %i ARM7: %lli %08X %i SYS: %lli\n", ARM9Timestamp, ARM9.PC, ARM9.TimingPtr, ARM7Timestamp << ARM9ClockShift, ARM7.R[15], ARM7.TimingPtr, SysTimestamp << ARM9ClockShift);
-                
-                //printf("main\n");
+
                 target = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
                 CurCPU = 1;
 
                 while ((ARM7Timestamp < target && (ARM7.TimingPtr == 0)) || (ARM9.TimingPtr != 0))
                 {
-                    //printf("7 ARM9: %lli %08X %i ARM7: %lli %08X %i SYS: %lli\n", ARM9Timestamp, ARM9.PC, ARM9.TimingPtr, ARM7Timestamp << ARM9ClockShift, ARM7.R[15], ARM7.TimingPtr, SysTimestamp << ARM9ClockShift);
                     target = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
                     ARM7Target = (ARM9.TimingPtr != 0) ? ARM7Timestamp + 1 : target; // might be changed by a reschedule
 
@@ -2104,7 +2086,6 @@ u32 NDS::RunFrame()
                         if (ARM7.TimingPtr == 0) ARM7.Execute<cpuMode>();
                     }
                     
-                    //printf("7m\n");
                     ResolveMainRAM();
 
                     RunTimers(1);
@@ -2133,7 +2114,6 @@ u32 NDS::RunFrame()
         break;
     }
     
-    //printf("F ARM9: %lli %08X %i ARM7: %lli %08X %i SYS: %lli\n", ARM9Timestamp, ARM9.PC, ARM9.TimingPtr, ARM7Timestamp << ARM9ClockShift, ARM7.R[15], ARM7.TimingPtr, SysTimestamp << ARM9ClockShift);
     // In the context of TASes, frame count is traditionally the primary measure of emulated time,
     // so it needs to be tracked even if NDS is powered off.
     NumFrames++;

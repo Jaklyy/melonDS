@@ -197,8 +197,6 @@ void ARM::Reset()
     IsSingleStep = false;
     BreakReq = false;
 #endif
-
-    MainRAMTimestamp = 0;
     
     TimingPtr = 0;
     ClearPtr = 0;
@@ -212,8 +210,6 @@ void ARM::Reset()
 void ARMv5::Reset()
 {
     PU_Map = PU_PrivMap;
-    Store = false;
-    MainRAMAccess = false;
     
     ITCMTimestamp = 0;
     TimestampActual = 0;
@@ -719,7 +715,6 @@ void ARMv5::Execute()
                     u32 icode = (CurInstr >> 6) & 0x3FF;
                     ARMInterpreter::THUMBInstrTable[icode](this);
                 }
-                if (((s64)NDS.ARM9Timestamp) < 0) printf("CRINGE DETECTED %04X\n", CurInstr & 0xFFFF);
             }
             else
             {
@@ -754,61 +749,11 @@ void ARMv5::Execute()
                 }
                 else
                     AddCycles_C();
-                if (((s64)NDS.ARM9Timestamp) < 0) printf("CRINGE DETECTED %08X\n", CurInstr);
             }
             
             if (TimingPtr > 0)
             {
-                //if (TimingBlocks[TimingPtr] == 0xFFFC) TimingBlocks[TimingPtr] = 0;
-                //AdjustTimes();
-                if (TimingPtr >= 128) printf("NOOOOOOOOOOOOOOOOO %i\n", TimingPtr);
-                //if (TimingBlocks[TimingPtr] > 0xFF)
-                {
-                    //printf("R9C %i %08X\n", TimingBlocks[TimingPtr], CurInstr);
-                    //printf("%lli %lli %lli %lli %lli %i\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS, TimingPtr);
-
-                    //for(int i = 0; i <= TimingPtr; i++) printf("%04X ", TimingBlocks[i]);
-
-                    //printf("\n");
-                }
-                /*
-                if ((DCacheStreamMainRAM) && (DCacheFillPtr != 7) && (DCacheFillTimes[DCacheFillPtr] <= 0))
-                {
-
-                }*/
-
-                WriteBufferCheck<false>();
-
                 break;
-            }
-            else
-            {
-                //if (TimingBlocks[0] > 0xFF)
-                {
-                    //printf("%lli %lli %lli %lli %lli\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS);
-                }
-                /*NDS.ARM9Timestamp += TimingBlocks[0];
-                for (int i = 0; i < 7; i++)
-                {
-                    ICacheFillTimes[i] -= TimingBlocks[0];
-                    DCacheFillTimes[i] -= TimingBlocks[0];
-                }
-                TimestampActual -= TimingBlocks[0];
-                WBTimestamp -= TimingBlocks[0];
-                WBInitialTS -= TimingBlocks[0];
-                */
-                //if (TimingBlocks[0] > 0xFF)
-                {
-                    //printf("R90 %i %08X\n", TimingBlocks[0], CurInstr);
-                    //printf("%lli %lli %lli %lli %lli\n", ICacheFillTimes[6], DCacheFillTimes[6], TimestampActual, WBTimestamp, WBInitialTS);
-
-                    //for(int i = 0; i <= TimingPtr; i++) printf("%04X ", TimingBlocks[i]);
-
-                    //printf("\n");
-                }
-
-                //TimingBlocks[0] = 0;
-                WriteBufferCheck<false>();
             }
 
             // TODO optimize this shit!!!
@@ -826,9 +771,6 @@ void ARMv5::Execute()
                     TriggerIRQ<mode>();
             }*/
         }
-
-        //NDS.ARM9Timestamp += Cycles;
-        //Cycles = 0;
     }
 
     if (Halted == 2)
@@ -1261,7 +1203,6 @@ void ARMv5::CodeFetch()
         {
             NDS.ARM9Timestamp += 1;
             if (NDS.ARM9Timestamp < TimestampActual) NDS.ARM9Timestamp = TimestampActual;
-            Store = false;
             DataRegion = Mem9_Null;
         }
     }

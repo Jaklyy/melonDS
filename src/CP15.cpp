@@ -1294,7 +1294,6 @@ inline bool ARMv5::WriteBufferHandle()
     // handle write buffer writes
     if (WBWriting)
     {
-        //printf("WB %lli %lli\n", WBTimestamp, TimingBlocks[TimingPtr]);
         // look up timings
         // TODO: handle interrupted bursts?
         u32 cycles;
@@ -1376,7 +1375,6 @@ inline bool ARMv5::WriteBufferHandle()
                 break;
         }
         
-        //printf("WB %lli %lli\n", WBTimestamp, TimingBlocks[TimingPtr]);
         WBLastRegion = NDS.ARM9Regions[WBCurAddr>>14];
         WBWriting = false;
         if ((force == 2) && ((WriteBufferFifo[WBWritePointer] >> 61) != 3)) return true;

@@ -187,8 +187,6 @@ public:
 
     MemRegion CodeMem;
 
-    u64 MainRAMTimestamp;
-
     u16 TimingBlocks[256]; /* msb is a flag for main ram access;
                             * lsbs are a counter: if msb set, num main ram fetches; else, num cycles
                             * 0x80 == main ram burst; 0x01 == 16 bit; 0x02 == 8 bit; 0x03 == Code Fetch (arm9); 0x04 == write; 0x08 == seq;
@@ -702,8 +700,6 @@ public:
     u64 TimestampActual;
     u32 PC;
     bool NullFetch;
-    bool Store;
-    bool MainRAMAccess;
 
     u8 ILCurrReg;
     u8 ILPrevReg;
