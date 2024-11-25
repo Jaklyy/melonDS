@@ -1283,14 +1283,9 @@ void DSi::Set_SCFG_Clock9(u16 val)
         ARM9.ICacheFillTimes[i] >>= ARM9ClockShift;
         ARM9.DCacheFillTimes[i] >>= ARM9ClockShift;
     }
-    for (int i = 0; i < 32; i++)
-    {
-        ARM9.TimingBlocks[i] >>= ARM9ClockShift;
-    }
 
     ARM9.TimestampActual >>= ARM9ClockShift;
-    ARM9.WBTimestamp >>= ARM9ClockShift;
-    ARM9.WBInitialTS >>= ARM9ClockShift;
+    ARM9.ITCMTimestamp >>= ARM9ClockShift;
 
     Log(LogLevel::Debug, "CLOCK9=%04X\n", val);
     SCFG_Clock9 = val & 0x0187;
@@ -1306,14 +1301,10 @@ void DSi::Set_SCFG_Clock9(u16 val)
         ARM9.ICacheFillTimes[i] <<= ARM9ClockShift;
         ARM9.DCacheFillTimes[i] <<= ARM9ClockShift;
     }
-    for (int i = 0; i < 32; i++)
-    {
-        ARM9.TimingBlocks[i] <<= ARM9ClockShift;
-    }
 
     ARM9.TimestampActual <<= ARM9ClockShift;
-    ARM9.WBTimestamp <<= ARM9ClockShift;
-    ARM9.WBInitialTS <<= ARM9ClockShift;
+    ARM9.ITCMTimestamp <<= ARM9ClockShift;
+
     ARM9.UpdateRegionTimings(0x00000, 0x40000);
 }
 

@@ -157,9 +157,8 @@ void LoadSingle(ARM* cpu, const u8 rd, const u8 rn, const s32 offset, const u16 
         cpu->R[rd] = val;
         if (cpu->Num == 0)
         {
-            ((ARMv5*)cpu)->ILCurrReg = rd;
             bool extra = ((size < 32) || (addr&0x3));
-            ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual + extra;
+            ((ARMv5*)cpu)->RaiseInterlock(rd, extra);
         }
     }
 }
@@ -362,9 +361,7 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
         cpu->JumpTo(((((ARMv5*)cpu)->CP15Control & (1<<15)) ? (val & ~0x1) : val), cpu->CurInstr & (1<<22)); } /* restores cpsr presumably due to shared dna with ldm */ \
     else { \
         cpu->R[r+1] = val; \
-        if (cpu->Num == 0) { \
-            ((ARMv5*)cpu)->ILCurrReg = r+1; \
-            ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual; } } \
+        if (cpu->Num == 0) ((ARMv5*)cpu)->RaiseInterlock(r+1); } \
     if (cpu->CurInstr & (1<<21)) cpu->R[(cpu->CurInstr>>16) & 0xF] = offset;
 
 #define A_LDRD_POST \
@@ -385,9 +382,7 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
         cpu->JumpTo(((((ARMv5*)cpu)->CP15Control & (1<<15)) ? (val & ~0x1) : val), cpu->CurInstr & (1<<22)); } /* restores cpsr presumably due to shared dna with ldm */ \
     else { \
         cpu->R[r+1] = val; \
-        if (cpu->Num == 0) { \
-            ((ARMv5*)cpu)->ILCurrReg = r+1; \
-            ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual; } } \
+        if (cpu->Num == 0) ((ARMv5*)cpu)->RaiseInterlock(r+1); } \
     cpu->R[(cpu->CurInstr>>16) & 0xF] += offset;
 
 #define A_STRD \
@@ -509,9 +504,8 @@ inline void SWP(ARM* cpu)
                 cpu->R[rd] = val;
                 if (cpu->Num == 0)
                 {
-                    ((ARMv5*)cpu)->ILCurrReg = rd;
                     bool extra = (byte || (base&0x3));
-                    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual + extra;
+                    ((ARMv5*)cpu)->RaiseInterlock(rd, extra);
                 }
             }
             else if (cpu->Num==1) cpu->JumpTo(val & ~1); // for some reason these jumps don't seem to work on the arm 9?
@@ -714,8 +708,7 @@ void A_LDM(ARM* cpu)
     else if (cpu->Num == 0)
     {
         u8 lastreg = 31 - __builtin_clz(cpu->CurInstr & 0x7FFF);
-        ((ARMv5*)cpu)->ILCurrReg = lastreg;
-        ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+        ((ARMv5*)cpu)->RaiseInterlock(lastreg);
     }
 }
 
@@ -838,11 +831,7 @@ void T_LDR_PCREL(ARM* cpu)
 
     cpu->AddCycles_CDI();
     if (dabort) [[unlikely]] ((ARMv5*)cpu)->DataAbort();
-    else if (cpu->Num == 0)
-    {
-        ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 8) & 0x7;
-        ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
-    }
+    else if (cpu->Num == 0) ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 8) & 0x7);
 }
 
 
@@ -1090,8 +1079,7 @@ void T_POP(ARM* cpu)
             else
             {
                 u8 lastreg = 31 - __builtin_clz(cpu->CurInstr & 0xFF);
-                ((ARMv5*)cpu)->ILCurrReg = lastreg;
-                ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+                ((ARMv5*)cpu)->RaiseInterlock(lastreg);
             }
         }
     }
@@ -1202,8 +1190,7 @@ void T_LDMIA(ARM* cpu)
     if (cpu->Num == 0)
     {
         u8 lastreg = 31 - __builtin_clz(cpu->CurInstr & 0xFF);
-        ((ARMv5*)cpu)->ILCurrReg = lastreg;
-        ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+        ((ARMv5*)cpu)->RaiseInterlock(lastreg);
     }
 
     if (!(cpu->CurInstr & (1<<((cpu->CurInstr >> 8) & 0x7))))

@@ -199,7 +199,8 @@ public:
                             * 0xC4 = ICache Stream Start Non-Main RAM; followed by a block containing: 0x001F == region;
                             * 0x20 == DCache variants of above;
                             * 0xA0 == Write Buffer Submit; 0xA1 == Drain WB; 0xA2 == WB Wait Read; 0xA3 == WB Wait Write; 0xA4 == WB TS Update;
-                            * 0x60 == Execute Stage; 0x61 == Memory Stage; 0x62 == Memory Stage (post load/store)
+                            * 0x60 == Execute Stage; 0x61 == Memory Stage; 0x62 == Memory Stage (post load/store);
+                            * 0x63 == Raise Interlock (0x00F0 == Reg; 0x000F == delay); 0x64 == Trigger Interlock Execute; 0x65 == Trigger Interlock Memory (0x000F == Reg);
                             SCRAPPED == Reg Deference; 0x08 == Swap; 0x04 == Write; 0x01 == 16 bit; 0x02 == 8 bit; low bits are reg used 
 
 
@@ -310,16 +311,14 @@ public:
     void AddCycles_CDI() override
     {
         AddCycles_MW2();
-        DataCycles = 0;
     }
 
     void AddCycles_CD() override
     {
-        Store = true;
         AddCycles_MW2();
-        DataCycles = 0;
     }
     
+    void RaiseInterlock(u8 reg, s8 extra = 0);
     template <bool bitfield>
     void HandleInterlocksExecute(u16 ilmask, u8* times = NULL);
     void HandleInterlocksMemory(u8 reg);
@@ -710,6 +709,9 @@ public:
     u8 ILPrevReg;
     u64 ILCurrTime;
     u64 ILPrevTime;
+
+    u16 InterlockedRegsX;
+    u8 InterlockTimes[16];
 
     u8 ICacheFillPtr;
     u8 DCacheFillPtr;

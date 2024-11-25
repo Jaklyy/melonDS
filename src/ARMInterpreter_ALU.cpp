@@ -928,8 +928,7 @@ void A_MUL(ARM* cpu)
 
             cpu->DataRegion = Mem9_Null;
             ((ARMv5*)cpu)->AddCycles_MW(2); // 2 M
-            ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF;
-            ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+            ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF);
         }
     }
     else
@@ -976,8 +975,7 @@ void A_MLA(ARM* cpu)
 
             cpu->DataRegion = Mem9_Null;
             ((ARMv5*)cpu)->AddCycles_MW(2); // 2 M
-            ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF;
-            ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+            ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF);
         }
     }
     else
@@ -1022,8 +1020,7 @@ void A_UMULL(ARM* cpu)
             
             cpu->DataRegion = Mem9_Null;
             ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-            ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF; // only one rd interlocks
-            ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+            ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF); // only one rd interlocks
         }
     }
     else
@@ -1075,8 +1072,7 @@ void A_UMLAL(ARM* cpu)
             
             cpu->DataRegion = Mem9_Null;
             ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-            ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF; // only one rd interlocks
-            ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+            ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF); // only one rd interlocks
         }
     }
     else
@@ -1121,8 +1117,7 @@ void A_SMULL(ARM* cpu)
             
             cpu->DataRegion = Mem9_Null;
             ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-            ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF; // only one rd interlocks
-            ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+            ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF); // only one rd interlocks
         }
     }
     else
@@ -1173,8 +1168,7 @@ void A_SMLAL(ARM* cpu)
             
             cpu->DataRegion = Mem9_Null;
             ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-            ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF; // only one rd interlocks
-            ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+            ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF); // only one rd interlocks
         }
     }
     else
@@ -1221,8 +1215,7 @@ void A_SMLAxy(ARM* cpu)
     
     cpu->DataRegion = Mem9_Null;
     ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-    ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF; // only one rd interlocks
-    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+    ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF); // only one rd interlocks
 }
 
 void A_SMLAWy(ARM* cpu)
@@ -1253,8 +1246,7 @@ void A_SMLAWy(ARM* cpu)
     
     cpu->DataRegion = Mem9_Null;
     ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-    ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF; // only one rd interlocks
-    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+    ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF); // only one rd interlocks
 }
 
 void A_SMULxy(ARM* cpu)
@@ -1281,8 +1273,7 @@ void A_SMULxy(ARM* cpu)
     
     cpu->DataRegion = Mem9_Null;
     ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-    ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF; // only one rd interlocks
-    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+    ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF); // only one rd interlocks
 }
 
 void A_SMULWy(ARM* cpu)
@@ -1307,8 +1298,7 @@ void A_SMULWy(ARM* cpu)
 
     cpu->DataRegion = Mem9_Null;
     ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-    ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF; // only one rd interlocks
-    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+    ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF); // only one rd interlocks
 }
 
 void A_SMLALxy(ARM* cpu)
@@ -1344,8 +1334,7 @@ void A_SMLALxy(ARM* cpu)
     cpu->AddCycles_C(); // 1 X
     cpu->DataRegion = Mem9_Null;
     ((ARMv5*)cpu)->AddCycles_MW(2); // 2 M
-    ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 16) & 0xF; // only one rd interlocks
-    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+    ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 16) & 0xF); // only one rd interlocks
 }
 
 
@@ -1400,8 +1389,7 @@ void A_QADD(ARM* cpu)
 
     cpu->DataRegion = Mem9_Null;
     ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-    ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 12) & 0xF; // only one rd interlocks
-    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+    ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 12) & 0xF); // only one rd interlocks
 }
 
 void A_QSUB(ARM* cpu)
@@ -1426,8 +1414,7 @@ void A_QSUB(ARM* cpu)
 
     cpu->DataRegion = Mem9_Null;
     ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-    ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 12) & 0xF; // only one rd interlocks
-    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+    ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 12) & 0xF); // only one rd interlocks
 }
 
 void A_QDADD(ARM* cpu)
@@ -1460,8 +1447,7 @@ void A_QDADD(ARM* cpu)
 
     cpu->DataRegion = Mem9_Null;
     ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-    ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 12) & 0xF; // only one rd interlocks
-    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+    ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 12) & 0xF); // only one rd interlocks
 }
 
 void A_QDSUB(ARM* cpu)
@@ -1494,8 +1480,7 @@ void A_QDSUB(ARM* cpu)
 
     cpu->DataRegion = Mem9_Null;
     ((ARMv5*)cpu)->AddCycles_MW(1); // dummy memory stage for interlock handling
-    ((ARMv5*)cpu)->ILCurrReg = (cpu->CurInstr >> 12) & 0xF; // only one rd interlocks
-    ((ARMv5*)cpu)->ILCurrTime = ((ARMv5*)cpu)->TimestampActual;
+    ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 12) & 0xF); // only one rd interlocks
 }
 
 
