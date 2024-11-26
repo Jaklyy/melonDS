@@ -1443,7 +1443,7 @@ bool ARMv4::DataRead32S(u32 addr, u32* val, u8 reg)
     return true;
 }
 
-bool ARMv4::DataWrite8(u32 addr, u8 val)
+bool ARMv4::DataWrite8(u32 addr, u8 val, u8 reg)
 {
     if ((addr >> 24) == 0x02) // main ram
     {
@@ -1460,7 +1460,7 @@ bool ARMv4::DataWrite8(u32 addr, u8 val)
     return true;
 }
 
-bool ARMv4::DataWrite16(u32 addr, u16 val)
+bool ARMv4::DataWrite16(u32 addr, u16 val, u8 reg)
 {
     addr &= ~1;
     
@@ -1479,7 +1479,7 @@ bool ARMv4::DataWrite16(u32 addr, u16 val)
     return true;
 }
 
-bool ARMv4::DataWrite32(u32 addr, u32 val)
+bool ARMv4::DataWrite32(u32 addr, u32 val, u8 reg)
 {
     addr &= ~3;
     
@@ -1498,7 +1498,7 @@ bool ARMv4::DataWrite32(u32 addr, u32 val)
     return true;
 }
 
-bool ARMv4::DataWrite32S(u32 addr, u32 val)
+bool ARMv4::DataWrite32S(u32 addr, u32 val, u8 reg)
 {
     addr &= ~3;
     

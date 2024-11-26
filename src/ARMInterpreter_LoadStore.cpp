@@ -148,7 +148,17 @@ void LoadSingle(ARM* cpu, const u8 rd, const u8 rn, const s32 offset, const u16 
     if (rd == 15)
     {
         if (cpu->Num==1 || (((ARMv5*)cpu)->CP15Control & (1<<15))) val &= ~0x1;
-        //if (cpu->Num==0) cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual + ((size<32) || (addr&0x3)); // force an interlock
+        if (cpu->Num == 0) // force an interlock
+        {
+            if (cpu->TimingPtr > 0)
+            {
+                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600 | ((size<32) || (addr&0x3));
+            }
+            else
+            {
+                cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual + ((size<32) || (addr&0x3));
+            }
+        }
 
         cpu->JumpTo(val);
     }
@@ -187,9 +197,9 @@ void StoreSingle(ARM* cpu, const u8 rd, const u8 rn, const s32 offset, const u16
         ((ARMv5*)cpu)->HandleInterlocksMemory(rd);
 
     bool dabort;
-    if constexpr (size == 8)  dabort = !cpu->DataWrite8 (addr, storeval);
-    if constexpr (size == 16) dabort = !cpu->DataWrite16(addr, storeval);
-    if constexpr (size == 32) dabort = !cpu->DataWrite32(addr, storeval);
+    if constexpr (size == 8)  dabort = !cpu->DataWrite8 (addr, storeval, rd);
+    if constexpr (size == 16) dabort = !cpu->DataWrite16(addr, storeval, rd);
+    if constexpr (size == 32) dabort = !cpu->DataWrite32(addr, storeval, rd);
 
     if constexpr (writeback == Writeback::Trans)
     {
@@ -357,7 +367,9 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
         ((ARMv5*)cpu)->DataAbort(); \
         return; } \
     if (r+1 == 15) { \
-        /*if (cpu->Num==0) cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual;*/ \
+        if (cpu->Num==0) { \
+            if (cpu->TimingPtr > 0) cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600; \
+            else cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual; } \
         cpu->JumpTo(((((ARMv5*)cpu)->CP15Control & (1<<15)) ? (val & ~0x1) : val), cpu->CurInstr & (1<<22)); } /* restores cpsr presumably due to shared dna with ldm */ \
     else { \
         cpu->R[r+1] = val; \
@@ -378,7 +390,9 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
         ((ARMv5*)cpu)->DataAbort(); \
         return; } \
     if (r+1 == 15) { \
-        /*if (cpu->Num==0) cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual;*/ \
+        if (cpu->Num==0) { \
+            if (cpu->TimingPtr > 0) cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600; \
+            else cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual; } \
         cpu->JumpTo(((((ARMv5*)cpu)->CP15Control & (1<<15)) ? (val & ~0x1) : val), cpu->CurInstr & (1<<22)); } /* restores cpsr presumably due to shared dna with ldm */ \
     else { \
         cpu->R[r+1] = val; \
@@ -392,9 +406,9 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
     if (r&1) { A_UNK(cpu); return; } \
     ExecuteStage<true>(cpu, ilmask | (1 << ((cpu->CurInstr>>16) & 0xF))); \
     ((ARMv5*)cpu)->HandleInterlocksMemory(r); \
-    bool dabort = !cpu->DataWrite32(offset, cpu->R[r]); \
+    bool dabort = !cpu->DataWrite32(offset, cpu->R[r], r); \
     u32 storeval = cpu->R[r+1]; if (r+1 == 15) storeval+=4; \
-    dabort |= !cpu->DataWrite32S (offset+4, storeval); \
+    dabort |= !cpu->DataWrite32S (offset+4, storeval, r+1); \
     /*if (cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 2;*/ \
     cpu->AddCycles_CD(); \
     if (dabort) [[unlikely]] { \
@@ -409,9 +423,9 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
     if (r&1) { A_UNK(cpu); return; } \
     ExecuteStage<true>(cpu, ilmask | (1 << ((cpu->CurInstr>>16) & 0xF))); \
     ((ARMv5*)cpu)->HandleInterlocksMemory(r); \
-    bool dabort = !cpu->DataWrite32(addr, cpu->R[r]); \
+    bool dabort = !cpu->DataWrite32(addr, cpu->R[r], r); \
     u32 storeval = cpu->R[r+1]; if (r+1 == 15) storeval+=4; \
-    dabort |= !cpu->DataWrite32S (addr+4, storeval); \
+    dabort |= !cpu->DataWrite32S (addr+4, storeval, r+1); \
     /*if (cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 2;*/ \
     cpu->AddCycles_CD(); \
     if (dabort) [[unlikely]] { \
@@ -484,13 +498,13 @@ inline void SWP(ARM* cpu)
     if ((cpu->CurInstr & 0xF) == 15) rm += 4;
 
     u32 val;
-    if ((byte ? cpu->DataRead8 (base, &val, 255)
-              : cpu->DataRead32(base, &val, 255))) [[likely]]
+    if ((byte ? cpu->DataRead8 (base, &val, (cpu->CurInstr >> 12) & 0xF)
+              : cpu->DataRead32(base, &val, (cpu->CurInstr >> 12) & 0xF))) [[likely]]
     {
         //cpu->TimingBlocks[cpu->TimingPtr] += cpu->DataCycles; // checkme
 
-        if ((byte ? cpu->DataWrite8 (base, rm)
-                  : cpu->DataWrite32(base, rm))) [[likely]]
+        if ((byte ? cpu->DataWrite8 (base, rm, cpu->CurInstr & 0xF)
+                  : cpu->DataWrite32(base, rm, cpu->CurInstr & 0xF))) [[likely]]
         {
             // rd only gets updated if both read and write succeed
             u32 rd = (cpu->CurInstr >> 12) & 0xF;
@@ -561,7 +575,7 @@ void EmptyRListLDMSTM(ARM* cpu, const u8 baseid, const u8 flags)
         }
         else
         {
-            cpu->DataWrite32(base, cpu->R[15] + ((flags & restoreorthumb) ? 2 : 4));
+            cpu->DataWrite32(base, cpu->R[15] + ((flags & restoreorthumb) ? 2 : 4), 15);
 
             cpu->AddCycles_CD();
         }
@@ -702,7 +716,17 @@ void A_LDM(ARM* cpu)
     // jump if pc got written
     if (cpu->CurInstr & (1<<15))
     {
-        //if (cpu->Num==0) cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual; // force an interlock
+        if (cpu->Num == 0) // force an interlock
+        {
+            if (cpu->TimingPtr > 0)
+            {
+                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+            }
+            else
+            {
+                cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+            }
+        }
         cpu->JumpTo(pc, cpu->CurInstr & (1<<22));
     }
     else if (cpu->Num == 0)
@@ -778,8 +802,8 @@ void A_STM(ARM* cpu)
 
             if (i == 15) val+=4;
 
-            dabort |= !(first ? cpu->DataWrite32 (base, val)
-                              : cpu->DataWrite32S(base, val));
+            dabort |= !(first ? cpu->DataWrite32 (base, val, i)
+                              : cpu->DataWrite32S(base, val, i));
 
             first = false;
 
@@ -794,8 +818,19 @@ void A_STM(ARM* cpu)
     {
         //if (cpu->Num == 0 && cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 1;
         cpu->AddCycles_CD();
-        if (cpu->Num == 0) ;//cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual; // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
-        else; // CHECKME: ARM7 timing behavior?
+        if (cpu->Num == 0) // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+        {
+            if (cpu->TimingPtr > 0)
+            {
+                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+            }
+            else
+            {
+                cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+            }
+        }
+        else
+        ; // CHECKME: ARM7 timing behavior?
     }
     else
     {
@@ -957,8 +992,8 @@ void T_PUSH(ARM* cpu)
     {
         if (cpu->CurInstr & (1<<i))
         {
-            dabort |= !(first ? cpu->DataWrite32 (base, cpu->R[i])
-                              : cpu->DataWrite32S(base, cpu->R[i]));
+            dabort |= !(first ? cpu->DataWrite32 (base, cpu->R[i], i)
+                              : cpu->DataWrite32S(base, cpu->R[i], i));
 
             first = false;
             base += 4;
@@ -967,16 +1002,27 @@ void T_PUSH(ARM* cpu)
 
     if (cpu->CurInstr & (1<<8))
     {
-        dabort |= !(first ? cpu->DataWrite32 (base, cpu->R[14])
-                          : cpu->DataWrite32S(base, cpu->R[14]));
+        dabort |= !(first ? cpu->DataWrite32 (base, cpu->R[14], 14)
+                          : cpu->DataWrite32S(base, cpu->R[14], 14));
     }
 
     if (__builtin_popcount(cpu->CurInstr & 0x1FF) == 1) [[unlikely]] // single reg
     {
         //if (cpu->Num == 0 && cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 1;
         cpu->AddCycles_CD();
-        if (cpu->Num == 0) ;//cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual; // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
-        else; // CHECKME: ARM7 timing behavior?
+        if (cpu->Num == 0) // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+        {
+            if (cpu->TimingPtr > 0)
+            {
+                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+            }
+            else
+            {
+                cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+            }
+        }
+        else
+        ; // CHECKME: ARM7 timing behavior?
     }
     else
     {
@@ -1043,7 +1089,17 @@ void T_POP(ARM* cpu)
         if (!dabort) [[likely]]
         {
             if (cpu->Num==1 || (((ARMv5*)cpu)->CP15Control & (1<<15))) pc |= 0x1;
-            //if (cpu->Num==0) cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual; // force an interlock
+            if (cpu->Num == 0) // force an interlock
+            {
+                if (cpu->TimingPtr > 0)
+                {
+                    cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+                }
+                else
+                {
+                    cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+                }
+            }
 
             cpu->JumpTo(pc);
             base += 4;
@@ -1110,8 +1166,8 @@ void T_STMIA(ARM* cpu)
     {
         if (cpu->CurInstr & (1<<i))
         {
-            dabort |= !(first ? cpu->DataWrite32 (base, cpu->R[i])
-                              : cpu->DataWrite32S(base, cpu->R[i]));
+            dabort |= !(first ? cpu->DataWrite32 (base, cpu->R[i], i)
+                              : cpu->DataWrite32S(base, cpu->R[i], i));
 
             first = false;
             base += 4;
@@ -1122,8 +1178,19 @@ void T_STMIA(ARM* cpu)
     {
         //if (cpu->Num == 0 && cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 1;
         cpu->AddCycles_CD();
-        if (cpu->Num == 0) ;//cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual; // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
-        else; // CHECKME: ARM7 timing behavior?
+        if (cpu->Num == 0) // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+        {
+            if (cpu->TimingPtr > 0)
+            {
+                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+            }
+            else
+            {
+                cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+            }
+        }
+        else
+        ; // CHECKME: ARM7 timing behavior?
     }
     else
     {

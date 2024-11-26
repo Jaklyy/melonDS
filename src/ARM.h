@@ -141,10 +141,10 @@ public:
     virtual bool DataRead16(u32 addr, u32* val, u8 reg) = 0;
     virtual bool DataRead32(u32 addr, u32* val, u8 reg) = 0;
     virtual bool DataRead32S(u32 addr, u32* val, u8 reg) = 0;
-    virtual bool DataWrite8(u32 addr, u8 val) = 0;
-    virtual bool DataWrite16(u32 addr, u16 val) = 0;
-    virtual bool DataWrite32(u32 addr, u32 val) = 0;
-    virtual bool DataWrite32S(u32 addr, u32 val) = 0;
+    virtual bool DataWrite8(u32 addr, u8 val, u8 reg) = 0;
+    virtual bool DataWrite16(u32 addr, u16 val, u8 reg) = 0;
+    virtual bool DataWrite32(u32 addr, u32 val, u8 reg) = 0;
+    virtual bool DataWrite32S(u32 addr, u32 val, u8 reg) = 0;
 
     virtual void AddCycles_C() = 0;
     virtual void AddCycles_CI(s32 numI) = 0;
@@ -199,6 +199,7 @@ public:
                             * 0xA0 == Write Buffer Submit; 0xA1 == Drain WB; 0xA2 == WB Wait Read; 0xA3 == WB Wait Write; 0xA4 == WB TS Update;
                             * 0x60 == Execute Stage; 0x61 == Memory Stage; 0x62 == Memory Stage (post load/store);
                             * 0x63 == Raise Interlock (0x00F0 == Reg; 0x000F == delay); 0x64 == Trigger Interlock Execute; 0x65 == Trigger Interlock Memory (0x000F == Reg);
+                            * 0x66 == Forced Interlock (lsb is extra delay);
                             SCRAPPED == Reg Deference; 0x08 == Swap; 0x04 == Write; 0x01 == 16 bit; 0x02 == 8 bit; low bits are reg used 
 
 
@@ -218,6 +219,7 @@ public:
     u8 CurCnt;
 
     u32 DeferAddr[17];
+    u32 DeferStore[16][2];
 
 #ifdef JIT_ENABLED
     u32 FastBlockLookupStart, FastBlockLookupSize;
@@ -292,10 +294,10 @@ public:
     bool DataRead16(u32 addr, u32* val, u8 reg) override;
     bool DataRead32(u32 addr, u32* val, u8 reg) override;
     bool DataRead32S(u32 addr, u32* val, u8 reg) override;
-    bool DataWrite8(u32 addr, u8 val) override;
-    bool DataWrite16(u32 addr, u16 val) override;
-    bool DataWrite32(u32 addr, u32 val) override;
-    bool DataWrite32S(u32 addr, u32 val) override;
+    bool DataWrite8(u32 addr, u8 val, u8 reg) override;
+    bool DataWrite16(u32 addr, u16 val, u8 reg) override;
+    bool DataWrite32(u32 addr, u32 val, u8 reg) override;
+    bool DataWrite32S(u32 addr, u32 val, u8 reg) override;
 
     void CodeFetch();
 
@@ -771,10 +773,10 @@ public:
     bool DataRead16(u32 addr, u32* val, u8 reg) override;
     bool DataRead32(u32 addr, u32* val, u8 reg) override;
     bool DataRead32S(u32 addr, u32* val, u8 reg) override;
-    bool DataWrite8(u32 addr, u8 val) override;
-    bool DataWrite16(u32 addr, u16 val) override;
-    bool DataWrite32(u32 addr, u32 val) override;
-    bool DataWrite32S(u32 addr, u32 val) override;
+    bool DataWrite8(u32 addr, u8 val, u8 reg) override;
+    bool DataWrite16(u32 addr, u16 val, u8 reg) override;
+    bool DataWrite32(u32 addr, u32 val, u8 reg) override;
+    bool DataWrite32S(u32 addr, u32 val, u8 reg) override;
     void AddCycles_C() override;
     void AddCycles_CI(s32 num) override;
     void AddCycles_CDI() override;
