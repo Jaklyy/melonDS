@@ -1329,13 +1329,13 @@ void NDS::RunMainRAM9()
             u8 ns = ARM9MemTimingsRgn[rgn][1];
             u8 seq = ARM9MemTimingsRgn[rgn][2];
 
-            u8 linepos = (block & 0xF) - 1;
+            u8 linepos = (block & 0xF);
 
             u64 cycles = ns + (seq * linepos);
             ARM9Timestamp += cycles;
             cycles = ARM9Timestamp;
 
-            for (int i = linepos+1; i < 7; i++)
+            for (int i = linepos; i < 7; i++)
             {
                 cycles += seq;
                 ARM9.ICacheFillTimes[i] = cycles;
@@ -1439,7 +1439,7 @@ void NDS::RunMainRAM9()
             u8 ns = ARM9MemTimingsRgn[rgn][1];
             u8 seq = ARM9MemTimingsRgn[rgn][2];
 
-            u8 linepos = (block & 0xF) - 1;
+            u8 linepos = (block & 0xF);
 
             u64 cycles = ns + (seq * linepos);
 
@@ -1473,9 +1473,10 @@ void NDS::RunMainRAM9()
                     if (!WBWriting)
                     {
                         if (Async9Timestamp < ((ARM9Timestamp + 1 + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift))
-                        Async9Timestamp = (ARM9Timestamp + 1 + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                            Async9Timestamp = (ARM9Timestamp + 1 + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
                     }
                 }
+                WBActive = true;
                 WBFifo[WBFillPtr] = ARM9.WriteBufferQueue[ARM9.WBQueueRead];
                 WBFillPtr = (WBFillPtr + 1) & 0xF;
                 ARM9.WBQueueRead += 1;
@@ -1484,7 +1485,6 @@ void NDS::RunMainRAM9()
                 {
                     ARM9.WBQueueRead = 0;
                     ARM9.WBQueuePtr = 0;
-                    WBActive = true;
                 }
                 ARM9.ClearPtr++;
                 ARM9Timestamp++;
@@ -1867,6 +1867,8 @@ void NDS::RunMainRAM9Async()
                     break;
                 }
                 case 2:
+                case 3:
+                case 4:
                 {
                     RunARM9WriteBuffer();
                     if (!WBActive)
@@ -1879,9 +1881,9 @@ void NDS::RunMainRAM9Async()
                     }
                     break;
                 }
-                case 3:
+                /*case 3:
                 {
-                    if (ARM9Timestamp >= Async9Timestamp << ARM9ClockShift)
+                    if (ARM9Timestamp > (Async9Timestamp << ARM9ClockShift))
                     {
                         RunARM9WriteBuffer();
                         if (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) - 1))
@@ -1926,7 +1928,7 @@ void NDS::RunMainRAM9Async()
                         ARM9.ClearPtr++;
                     }
                     break;
-                }
+                }*/
                 default:
                 {
                     printf("WHERE???\n");

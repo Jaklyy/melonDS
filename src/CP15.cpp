@@ -557,7 +557,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
         }
         else
         {
-            TimingBlocks[TimingPtr++] = 0xC300 + ((addr & (ICACHE_LINELENGTH-1)) / 4) + 1;
+            TimingBlocks[TimingPtr++] = 0xC300 | (((addr & (ICACHE_LINELENGTH-1)) / 4) + 1);
             ICacheFillPtr = (addr & (ICACHE_LINELENGTH-1)) / 4;
         }
     }
@@ -567,12 +567,12 @@ u32 ARMv5::ICacheLookup(const u32 addr)
         {
             if (CP15BISTTestStateRegister & CP15_BIST_TR_DISABLE_ICACHE_STREAMING) [[unlikely]]
             {
-                TimingBlocks[TimingPtr++] = 0xC408;
+                TimingBlocks[TimingPtr++] = 0xC407;
                 ICacheFillPtr = 7;
             }
             else
             {
-                TimingBlocks[TimingPtr++] = 0xC400 + ((addr & (ICACHE_LINELENGTH-1)) / 4) + 1;
+                TimingBlocks[TimingPtr++] = 0xC400 | ((addr & (ICACHE_LINELENGTH-1)) / 4);
                 ICacheFillPtr = (addr & (ICACHE_LINELENGTH-1)) / 4;
             }
 
@@ -606,7 +606,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
                 cycles = NDS.ARM9Timestamp;
 
                 ICacheFillPtr = linepos;
-                for (int i = linepos+1; i < 7; i++)
+                for (int i = linepos; i < 7; i++)
                 {
                     cycles += seq;
                     ICacheFillTimes[i] = cycles;
@@ -823,7 +823,7 @@ u32 ARMv5::DCacheLookup(const u32 addr)
         }
         else
         {
-            TimingBlocks[TimingPtr++] = 0x2300 + ((addr & (DCACHE_LINELENGTH-1)) / 4) + 1;
+            TimingBlocks[TimingPtr++] = 0x2300 | (((addr & (DCACHE_LINELENGTH-1)) / 4) + 1);
             DCacheFillPtr = (addr & (DCACHE_LINELENGTH-1)) / 4;
         }
     }
@@ -833,12 +833,12 @@ u32 ARMv5::DCacheLookup(const u32 addr)
         {
             if (CP15BISTTestStateRegister & CP15_BIST_TR_DISABLE_DCACHE_STREAMING) [[unlikely]]
             {
-                TimingBlocks[TimingPtr++] = 0x2408;
+                TimingBlocks[TimingPtr++] = 0x2407;
                 DCacheFillPtr = 7;
             }
             else
             {
-                TimingBlocks[TimingPtr++] = 0x2400 + ((addr & (DCACHE_LINELENGTH-1)) / 4) + 1;
+                TimingBlocks[TimingPtr++] = 0x2400 | ((addr & (DCACHE_LINELENGTH-1)) / 4);
                 DCacheFillPtr = (addr & (DCACHE_LINELENGTH-1)) / 4;
             }
 
