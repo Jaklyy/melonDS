@@ -1284,6 +1284,7 @@ void DSi::Set_SCFG_Clock9(u16 val)
         ARM9.DCacheFillTimes[i] >>= ARM9ClockShift;
     }
 
+    WBSubmissionDelay >>= ARM9ClockShift;
     ARM9.TimestampActual >>= ARM9ClockShift;
     ARM9.ITCMTimestamp >>= ARM9ClockShift;
 
@@ -1301,7 +1302,8 @@ void DSi::Set_SCFG_Clock9(u16 val)
         ARM9.ICacheFillTimes[i] <<= ARM9ClockShift;
         ARM9.DCacheFillTimes[i] <<= ARM9ClockShift;
     }
-
+    
+    WBSubmissionDelay <<= ARM9ClockShift;
     ARM9.TimestampActual <<= ARM9ClockShift;
     ARM9.ITCMTimestamp <<= ARM9ClockShift;
 

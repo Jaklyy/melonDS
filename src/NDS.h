@@ -287,6 +287,10 @@ public: // TODO: Encapsulate the rest of these members
     u8 WBWritePtr;
     u8 WBFillPtr;
     u64 WBCurr;
+    u64 WBFinishTime;
+    u64 WBSubmissionDelay;
+    u64 WBFARK;
+    u32 WBLastRegion;
     u64 WBFifo[16];
     u32 WBAddr;
     bool WBWriting;
