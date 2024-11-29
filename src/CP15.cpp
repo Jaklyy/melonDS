@@ -1763,7 +1763,7 @@ void ARMv5::CP15Write(u32 id, u32 val)
         ICacheInvalidateByAddr(val);
         //Halt(255);
         return;
-    case 0x752:
+    /*case 0x752: // does this exist?
         // requires priv mode or causes UNKNOWN INSTRUCTION exception
         if (PU_Map != PU_PrivMap)
         {            
@@ -1777,7 +1777,7 @@ void ARMv5::CP15Write(u32 id, u32 val)
         }
         //Halt(255);
         return;
-
+        */
 
     case 0x760:
         // requires priv mode or causes UNKNOWN INSTRUCTION exception
@@ -1797,7 +1797,7 @@ void ARMv5::CP15Write(u32 id, u32 val)
         DCacheInvalidateByAddr(val);
         //printf("inval data cache SI\n");
         return;
-    case 0x762:
+    /*case 0x762:
         // requires priv mode or causes UNKNOWN INSTRUCTION exception
         if (PU_Map != PU_PrivMap)
         {            
@@ -1809,16 +1809,16 @@ void ARMv5::CP15Write(u32 id, u32 val)
             u8 cacheLine = (val >> DCACHE_LINELENGTH_LOG2) & (DCACHE_LINESPERSET -1);
             DCacheInvalidateBySetAndWay(cacheSet, cacheLine);
         }
-        return;
+        return;*/
 
-    case 0x770:
+    /*case 0x770:
         // invalidate both caches
         // can be called from user and privileged
         ICacheInvalidateAll();
         DCacheInvalidateAll();
         break;
-
-    case 0x7A0:
+        */
+    /*case 0x7A0:
         // requires priv mode or causes UNKNOWN INSTRUCTION exception
         if (PU_Map != PU_PrivMap)
         {            
@@ -1826,7 +1826,7 @@ void ARMv5::CP15Write(u32 id, u32 val)
         }
         //Log(LogLevel::Debug,"clean data cache\n");
         DCacheClearAll();
-        return;
+        return;*/
     case 0x7A1:
         // requires priv mode or causes UNKNOWN INSTRUCTION exception
         if (PU_Map != PU_PrivMap)
@@ -1850,7 +1850,7 @@ void ARMv5::CP15Write(u32 id, u32 val)
             DCacheClearByASetAndWay(cacheSet, cacheLine);
         }
         return;
-    case 0x7A3:
+    case 0x7A3: //checkme?
         // requires priv mode or causes UNKNOWN INSTRUCTION exception
         if (PU_Map != PU_PrivMap)
         {            
@@ -1879,7 +1879,7 @@ void ARMv5::CP15Write(u32 id, u32 val)
         ICacheLookup((val & ~0x03) | 0x1C);
         return;
 
-    case 0x7E0:
+    /*case 0x7E0:
         //Log(LogLevel::Debug,"clean & invalidate data cache\n");
         // requires priv mode or causes UNKNOWN INSTRUCTION exception
         if (PU_Map != PU_PrivMap)
@@ -1888,7 +1888,7 @@ void ARMv5::CP15Write(u32 id, u32 val)
         }
         DCacheClearAll();
         DCacheInvalidateAll();
-        return;
+        return;*/
     case 0x7E1:
         //Log(LogLevel::Debug,"clean & invalidate data cache MVA\n");
         // requires priv mode or causes UNKNOWN INSTRUCTION exception
