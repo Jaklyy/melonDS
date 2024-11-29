@@ -257,7 +257,6 @@ void A_MRS(ARM* cpu)
     if (cpu->Num != 1) // arm9
     {
         cpu->AddCycles_C(); // 1 X
-        cpu->DataRegion = Mem9_Null;
         ((ARMv5*)cpu)->AddCycles_MW(2); // 2 M
     }
     else cpu->AddCycles_C(); // arm7
@@ -332,7 +331,6 @@ void A_MRC(ARM* cpu)
     if (cpu->Num != 1)
     {
         cpu->AddCycles_C(); // 1 Execute cycle
-        cpu->DataRegion = Mem9_Null;
         ((ARMv5*)cpu)->AddCycles_MW(2); // 2 Memory cycles
         ((ARMv5*)cpu)->RaiseInterlock((cpu->CurInstr >> 12) & 0xF);
     }
