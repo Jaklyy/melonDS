@@ -260,7 +260,7 @@ public: // TODO: Encapsulate the rest of these members
     u64 ARM9Timestamp, ARM9Target;
     u64 Async9Timestamp; // used for tracking the ARM9's semi-asynchronous hardware features for Main RAM contention (cache streaming, write buffer)
     u64 ARM7Timestamp, ARM7Target;
-    u64 MainRAMTimestamp; // used for handling Main RAM contention (Main RAM can only perform one access at a time)
+    u64 MainRAMTimestamp; u64 MainRAMWait;// used for handling Main RAM contention (Main RAM can only perform one access at a time)
     u32 ARM9ClockShift;
 
     u32 IME[2];
@@ -508,7 +508,7 @@ public: // TODO: Encapsulate the rest of these members
     void RunCycles(ARM* cpu, u64* ts);
     void RunMainRAM7();
     void RunMainRAM9();
-    void RunARM9WriteBuffer();
+    bool RunARM9WriteBuffer();
     void RunMainRAM9Async();
 
 #ifdef JIT_ENABLED
