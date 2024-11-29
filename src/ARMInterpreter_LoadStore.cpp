@@ -670,7 +670,17 @@ void A_LDM(ARM* cpu)
     {
         //if (cpu->Num == 0 && cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 1;
         cpu->AddCycles_CDI();
-        if (cpu->Num == 0) ;//cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual; // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+        if (cpu->Num == 0) // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+        {
+            if (cpu->TimingPtr > 0)
+            {
+                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+            }
+            else
+            {
+                cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+            }
+        }
         else; // CHECKME: ARM7 timing behavior?
     }
     else
@@ -1077,7 +1087,17 @@ void T_POP(ARM* cpu)
         {
             //if (cpu->Num == 0 && cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 1;
             cpu->AddCycles_CDI();
-            if (cpu->Num == 0) ;//cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual; // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+            if (cpu->Num == 0) // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+            {
+                if (cpu->TimingPtr > 0)
+                {
+                    cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+                }
+                else
+                {
+                    cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+                }
+            }
             else; // CHECKME: ARM7 timing behavior?
         }
         else
@@ -1239,7 +1259,17 @@ void T_LDMIA(ARM* cpu)
     {
         //if (cpu->Num == 0 && cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 1;
         cpu->AddCycles_CDI();
-        if (cpu->Num == 0) ;//cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual; // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+        if (cpu->Num == 0) // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+        {
+            if (cpu->TimingPtr > 0)
+            {
+                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+            }
+            else
+            {
+                cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+            }
+        }
         else; // CHECKME: ARM7 timing behavior?
     }
     else
