@@ -992,9 +992,6 @@ void NDS::RunMainRAM7()
         }
     }
     
-    //if ((ARM9.TimingPtr != 0) && ((ARM9Timestamp >> ARM9ClockShift) < ARM7Timestamp)) ARM9Timestamp = ARM7Timestamp << ARM9ClockShift;
-    //if (Async9Timestamp < ARM7Timestamp) Async9Timestamp = ARM7Timestamp;
-    MainRAMWait = ARM7Timestamp;
     RunCycles(&ARM7, &ARM7Timestamp);
 }
 
@@ -1027,10 +1024,9 @@ void NDS::RunMainRAM9()
                 
                 MainRAMTimestamp = (ARM9Timestamp >> ARM9ClockShift) + 9;
                 ARM9Timestamp += ARM9.DataCycles = (((block & 0x0400) ? 7 : 9) << ARM9ClockShift) - 1;
-            }
 
-            MainRAMLastAccess = 0;
-            if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
+                MainRAMLastAccess = 0;
+            }
             
             u8 reg = block & 0x7F;
             if (reg < 16)
@@ -1062,8 +1058,7 @@ void NDS::RunMainRAM9()
             ARM9Timestamp += ARM9.DataCycles = (((block & 0x0400) ? 6 : 8) << ARM9ClockShift) - 1;
 
             MainRAMLastAccess = 0;
-            if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
-            
+
             u8 reg = block & 0x7F;
             if (reg < 16)
             {
@@ -1092,8 +1087,7 @@ void NDS::RunMainRAM9()
             ARM9Timestamp += ARM9.DataCycles = (((block & 0x0400) ? 7 : 9) << ARM9ClockShift) - 1;
 
             MainRAMLastAccess = 0;
-            if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
-            
+
             u8 reg = block & 0x7F;
             if (reg < 16)
             {
@@ -1119,8 +1113,6 @@ void NDS::RunMainRAM9()
             
             MainRAMTimestamp = (ARM9Timestamp >> ARM9ClockShift) + 9;
             ARM9Timestamp += (9 << ARM9ClockShift) - 1;
-
-            if ((ARM7.TimingPtr != 0) && (((ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift) > ARM7Timestamp)) ARM7Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
 
             ARM9.ClearPtr++;
             ARM9.DataRegion = Mem9_Null;
@@ -1737,8 +1729,7 @@ bool NDS::RunARM9WriteBuffer()
 
         Async9Timestamp += cycles;
         WBFinishTime = Async9Timestamp - (ARM9Regions[WBAddr>>14] != Mem9_MainRAM);
-        if ((ARM9Regions[WBAddr>>14] == Mem9_MainRAM) && (ARM7.TimingPtr != 0) && (ARM7Timestamp < Async9Timestamp)) ARM7Timestamp = Async9Timestamp;
-        
+
         WBLastRegion = ARM9Regions[WBAddr>>14];
 
         switch (WBCurr >> 61)
@@ -1849,7 +1840,6 @@ void NDS::RunMainRAM9Async()
                             {
                                 CheckAsync9 = 5;
                                 Async9Goal = 8;
-                                if ((ARM7.TimingPtr != 0) && ARM7Timestamp < Async9Timestamp) ARM7Timestamp = Async9Timestamp;
                                 return;
                             }
                         }
@@ -1909,7 +1899,6 @@ void NDS::RunMainRAM9Async()
                 }
                 CheckAsync9 = 0;
             }
-            if ((ARM7.TimingPtr != 0) && ARM7Timestamp < Async9Timestamp) ARM7Timestamp = Async9Timestamp;
             break;
         }
 
