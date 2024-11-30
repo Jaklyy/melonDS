@@ -969,7 +969,7 @@ void NDS::RunMainRAM7()
         }
         else
         {
-            if (ARM7Timestamp < MainRAMTimestamp) ARM7Timestamp = MainRAMTimestamp;
+            if (ARM7Timestamp < MainRAMTimestamp) { ARM7Timestamp = MainRAMTimestamp; return; }
 
             if (block & 0x0300) // 8/16 bit
             {
@@ -1022,7 +1022,7 @@ void NDS::RunMainRAM9()
             }
             else
             {
-                if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
+                if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) { ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift); return; }
                 else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
                 
                 MainRAMTimestamp = (ARM9Timestamp >> ARM9ClockShift) + 9;
@@ -1055,7 +1055,7 @@ void NDS::RunMainRAM9()
         {
             if (ARM9Timestamp < (MainRAMWait<<ARM9ClockShift)) { ARM9Timestamp = MainRAMWait<<ARM9ClockShift; return; }
 
-            if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
+            if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) { ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift); return; }
             else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
             
             MainRAMTimestamp = (ARM9Timestamp >> ARM9ClockShift) + 8; // checkme?
@@ -1085,7 +1085,7 @@ void NDS::RunMainRAM9()
         {
             if (ARM9Timestamp < (MainRAMWait<<ARM9ClockShift)) { ARM9Timestamp = MainRAMWait<<ARM9ClockShift; return; }
 
-            if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
+            if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) { ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift); return; }
             else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
             
             MainRAMTimestamp = (ARM9Timestamp >> ARM9ClockShift) + 9; // checkme?
@@ -1114,7 +1114,7 @@ void NDS::RunMainRAM9()
         {
             if (ARM9Timestamp < (MainRAMWait<<ARM9ClockShift)) { ARM9Timestamp = MainRAMWait<<ARM9ClockShift; return; }
 
-            if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift);
+            if (ARM9Timestamp < (MainRAMTimestamp << ARM9ClockShift)) { ARM9Timestamp = (MainRAMTimestamp << ARM9ClockShift); return; }
             else ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
             
             MainRAMTimestamp = (ARM9Timestamp >> ARM9ClockShift) + 9;
@@ -1141,8 +1141,13 @@ void NDS::RunMainRAM9()
 
             if (block & 0x0800)
             {
-                ARM9Timestamp += ARM9MemTimingsRgn[rgn][2] << ARM9ClockShift;
-                ARM9.DataCycles = ((block & 0x4000) ? 3 : 2) << ARM9ClockShift;
+                u32 cycles = ARM9MemTimingsRgn[rgn][2];
+                if (cycles > 0)
+                {
+                    ARM9Timestamp += cycles << ARM9ClockShift;
+                    ARM9.DataCycles = ((block & 0x4000) ? 3 : cycles) << ARM9ClockShift;
+                }
+                else ARM9Timestamp += ARM9.DataCycles = 1;
             }
             else
             {
@@ -1213,7 +1218,7 @@ void NDS::RunMainRAM9()
                         ARM9Timestamp += 1<<ARM9ClockShift;
 
                 ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
-                ARM9Timestamp += (ARM9MemTimingsRgn[rgn][1] << ARM9ClockShift) - 1;
+                ARM9Timestamp += (cycles << ARM9ClockShift) - 1;
             }
             else
             {
@@ -1258,7 +1263,8 @@ void NDS::RunMainRAM9()
                     if ((CacheProgress < 8) && (ARM9Timestamp < ((Async9Timestamp << ARM9ClockShift) + 1))) ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) + 1;
                     else
                     {
-                        ARM9Timestamp++;
+                        if (ARM9Timestamp < ARM9.ITCMTimestamp) ARM9Timestamp = ARM9.ITCMTimestamp;
+                        ARM9Timestamp += 1;
                         ARM9.ClearPtr++;
                     }
                     ARM9.DataRegion = Mem9_Null;
@@ -1316,7 +1322,12 @@ void NDS::RunMainRAM9()
                     CheckAsync9 = 4;
                     CacheProgress = Async9Goal = 8;
                 }
-                else ARM9.ClearPtr++;
+                else
+                {
+                    u64 time = (Async9Timestamp << ARM9ClockShift) - 6;
+                    if (ARM9Timestamp < time) ARM9Timestamp = time;
+                    ARM9.ClearPtr++;
+                }
             }
             break;
         }
@@ -1327,7 +1338,7 @@ void NDS::RunMainRAM9()
             CheckAsync9 = 1;
             u64 time = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
             if (Async9Timestamp < time) Async9Timestamp = time;
-            //else ARM9Timestamp = Async9Timestamp >> ARM9ClockShift;
+            else ARM9Timestamp = Async9Timestamp << ARM9ClockShift;
             CacheProgress = Async9Goal = block & 0xFF;
             Async9Curr = 0;
             break;
@@ -1405,7 +1416,12 @@ void NDS::RunMainRAM9()
                     CheckAsync9 = 4;
                     CacheProgress = Async9Goal = 8;
                 }
-                else ARM9.ClearPtr++;
+                else
+                {
+                    u64 time = (Async9Timestamp << ARM9ClockShift) - 6;
+                    if (ARM9Timestamp < time) ARM9Timestamp = time;
+                    ARM9.ClearPtr++;
+                }
             }
             break;
         }
@@ -1440,7 +1456,7 @@ void NDS::RunMainRAM9()
             CheckAsync9 = 1;
             u64 time = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) >> ARM9ClockShift;
             if (Async9Timestamp < time) Async9Timestamp = time;
-            //else ARM9Timestamp = Async9Timestamp >> ARM9ClockShift;
+            else ARM9Timestamp = Async9Timestamp << ARM9ClockShift;
             CacheProgress = Async9Goal = block & 0xFF;
             Async9Curr = 0;
             break;
@@ -1666,7 +1682,7 @@ bool NDS::RunARM9WriteBuffer()
             {
                 if (Async9Timestamp < MainRAMWait) { Async9Timestamp = MainRAMWait; return false; }
 
-                if (MainRAMTimestamp > Async9Timestamp) Async9Timestamp = MainRAMTimestamp;
+                if (MainRAMTimestamp > Async9Timestamp) { Async9Timestamp = MainRAMTimestamp; return false; }
                 MainRAMTimestamp = Async9Timestamp + 9;
                 cycles = 4;
             }
@@ -1679,7 +1695,7 @@ bool NDS::RunARM9WriteBuffer()
             {
                 if (Async9Timestamp < MainRAMWait) { Async9Timestamp = MainRAMWait; return false; }
 
-                if (MainRAMTimestamp > Async9Timestamp) Async9Timestamp = MainRAMTimestamp;
+                if (MainRAMTimestamp > Async9Timestamp) { Async9Timestamp = MainRAMTimestamp; return false; }
                 MainRAMTimestamp = Async9Timestamp + 8;
 
                 cycles = 3;
@@ -1689,7 +1705,6 @@ bool NDS::RunARM9WriteBuffer()
         }
         case 3:
         {
-            WBAddr += 4;
             if ((ARM9Regions[WBAddr>>14] != Mem9_MainRAM) || !MainRAMLastAccess)
             {
                 if (Async9Timestamp < MainRAMWait) { Async9Timestamp = MainRAMWait; return false; }
@@ -1705,7 +1720,8 @@ bool NDS::RunARM9WriteBuffer()
             {
                 if (Async9Timestamp < MainRAMWait) { Async9Timestamp = MainRAMWait; return false; }
 
-                if (MainRAMTimestamp > Async9Timestamp) Async9Timestamp = MainRAMTimestamp;
+                if (MainRAMTimestamp > Async9Timestamp) { Async9Timestamp = MainRAMTimestamp; return false; }
+
                 MainRAMTimestamp = Async9Timestamp + 9;
                 cycles = 4;
                 MainRAMLastAccess = 0;
@@ -1753,7 +1769,8 @@ bool NDS::RunARM9WriteBuffer()
 
     if ((WBFifo[WBWritePtr] >> 61) != 4)
     {
-        if (((WBFifo[WBWritePtr] >> 61) != 3) && (ARM9Regions[WBAddr>>14] == Mem9_MainRAM) && (MainRAMTimestamp > Async9Timestamp)) Async9Timestamp = MainRAMTimestamp;
+        if (((WBFifo[WBWritePtr] >> 61) != 3) && (ARM9Regions[WBAddr>>14] == Mem9_MainRAM) && (MainRAMTimestamp > Async9Timestamp)) { Async9Timestamp = MainRAMTimestamp; return false; }
+        if ((WBCurr>>61) == 3) WBAddr += 4;
         WBCurr = WBFifo[WBWritePtr];
         WBWriting = true;
     }
@@ -1788,6 +1805,7 @@ void NDS::RunMainRAM9Async()
             }
             else
             {
+                if (MainRAMTimestamp > Async9Timestamp) { Async9Timestamp = MainRAMTimestamp; return; }
                 MainRAMTimestamp = Async9Timestamp += 9;
                 MainRAMLastAccess = 0;
             }
@@ -1803,6 +1821,7 @@ void NDS::RunMainRAM9Async()
                     case 1: // Initial Fetch
                     {
                         ARM9Timestamp = (Async9Timestamp << ARM9ClockShift) - 1;
+                        if (Async9Mode == 1) ARM9.DataRegion = Mem9_Null;
                         ARM9.ClearPtr++;
                         break;
                     }
@@ -1814,15 +1833,22 @@ void NDS::RunMainRAM9Async()
                             {
                                 u64 time = (Async9Timestamp << ARM9ClockShift) + 1;
                                 if (ARM9Timestamp < time) ARM9Timestamp = time;
+                                else
+                                {
+                                    if (ARM9Timestamp < ARM9.ITCMTimestamp) ARM9Timestamp = ARM9.ITCMTimestamp;
+                                    ARM9Timestamp += 1;
+                                }
                                 if (Async9Mode == 1)
                                 {
                                     if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+                                    ARM9.DataRegion = Mem9_Null;
                                 }
                                 break;
                             }
                             else
                             {
                                 CheckAsync9 = 5;
+                                Async9Goal = 8;
                                 if ((ARM7.TimingPtr != 0) && ARM7Timestamp < Async9Timestamp) ARM7Timestamp = Async9Timestamp;
                                 return;
                             }
@@ -1833,6 +1859,7 @@ void NDS::RunMainRAM9Async()
                             if (Async9Mode == 1)
                             {
                                 if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+                                ARM9.DataRegion = Mem9_Null;
                             }
                         }
                         ARM9.ClearPtr++;
@@ -1855,10 +1882,16 @@ void NDS::RunMainRAM9Async()
                     case 5: // Overshot Fetch
                     {
                         u64 time = (Async9Timestamp << ARM9ClockShift) + 1;
-                        if (ARM9Timestamp < time) ARM9Timestamp = time;
+                        if (ARM9Timestamp < time) ARM9Timestamp = time; // checkme: should this be <= ?
+                        else
+                        {
+                            if (ARM9Timestamp < ARM9.ITCMTimestamp) ARM9Timestamp = ARM9.ITCMTimestamp;
+                            ARM9Timestamp += 1;
+                        }
                         if (Async9Mode == 1)
                         {
                             if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+                            ARM9.DataRegion = Mem9_Null;
                         }
                         ARM9.ClearPtr++;
                         break;

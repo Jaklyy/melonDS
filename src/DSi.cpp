@@ -1287,6 +1287,7 @@ void DSi::Set_SCFG_Clock9(u16 val)
     WBSubmissionDelay >>= ARM9ClockShift;
     ARM9.TimestampActual >>= ARM9ClockShift;
     ARM9.ITCMTimestamp >>= ARM9ClockShift;
+    WBFARK >>= ARM9ClockShift;
 
     Log(LogLevel::Debug, "CLOCK9=%04X\n", val);
     SCFG_Clock9 = val & 0x0187;
@@ -1306,6 +1307,7 @@ void DSi::Set_SCFG_Clock9(u16 val)
     WBSubmissionDelay <<= ARM9ClockShift;
     ARM9.TimestampActual <<= ARM9ClockShift;
     ARM9.ITCMTimestamp <<= ARM9ClockShift;
+    WBFARK <<= ARM9ClockShift;
 
     ARM9.UpdateRegionTimings(0x00000, 0x40000);
 }
