@@ -1798,7 +1798,7 @@ bool NDS::RunARM9WriteBuffer()
     if ((WBFifo[WBWritePtr] >> 61) != 4)
     {
         if (((WBFifo[WBWritePtr] >> 61) != 3) && (ARM9Regions[WBAddr>>14] == Mem9_MainRAM) && (MainRAMTimestamp > Async9Timestamp)) { Async9Timestamp = MainRAMTimestamp; return false; }
-        if ((WBCurr>>61) == 3) WBAddr += 4;
+        if ((WBFifo[WBWritePtr] >> 61) == 3) WBAddr += 4;
         WBCurr = WBFifo[WBWritePtr];
         WBWriting = true;
     }
