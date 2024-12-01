@@ -218,7 +218,7 @@ public:
     u16 ClearPtr;
     u8 CurCnt;
 
-    u32 DeferAddr[22];
+    u64 DeferAddr[22];
     u32 DeferStore[16][2];
 
 #ifdef JIT_ENABLED

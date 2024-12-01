@@ -1116,13 +1116,13 @@ void NDS::RunMainRAM9()
 
             switch (block & 0xFF)
             {
-                case 0: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[16]); break;
+                case 0: if (ARM9.DeferAddr[16] <= 0xFFFFFFFF) ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[16]); break;
                 case 1: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[17]) >> 16; break;
                 case 2: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[18]); break;
                 case 3: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[19]); ARM9.NextInstr[1] = ARM9.NextInstr[0] >> 16; break;
                 case 4: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[20]); break;
                 case 5: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[21]); break;
-                case 0xFF: break;
+                default: break;
             }
 
             ARM9.ClearPtr++;
@@ -1232,14 +1232,15 @@ void NDS::RunMainRAM9()
 
             switch (block & 0xFF)
             {
-                case 0: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[16]); break;
+                case 0: if (ARM9.DeferAddr[16] <= 0xFFFFFFFF) ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[16]); break;
                 case 1: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[17]) >> 16; break;
                 case 2: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[18]); break;
                 case 3: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[19]); ARM9.NextInstr[1] = ARM9.NextInstr[0] >> 16; break;
                 case 4: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[20]); break;
                 case 5: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[21]); break;
-                case 0xFF: break;
+                default: break;
             }
+
             ARM9.ClearPtr += 2;
             ARM9.DataRegion = Mem9_Null;
             break;

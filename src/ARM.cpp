@@ -357,6 +357,8 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
         }
     }
 
+    DeferAddr[16] |= (1ULL<<63);
+
     if (addr & 0x1)
     {
         addr &= ~0x1;
