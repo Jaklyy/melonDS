@@ -147,20 +147,21 @@ void LoadSingle(ARM* cpu, const u8 rd, const u8 rn, const s32 offset, const u16 
 
     if (rd == 15)
     {
-        if (cpu->Num==1 || (((ARMv5*)cpu)->CP15Control & (1<<15))) val &= ~0x1;
         if (cpu->Num == 0) // force an interlock
         {
             if (cpu->TimingPtr > 0)
             {
-                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600 | ((size<32) || (addr&0x3));
+                cpu->R[15] = val;
+                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6680 | ((size<32) || (addr&0x3));
             }
             else
             {
+                if (((ARMv5*)cpu)->CP15Control & (1<<15)) val &= ~0x1;
                 cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual + ((size<32) || (addr&0x3));
+                cpu->JumpTo(val);
             }
         }
-
-        cpu->JumpTo(val);
+        else cpu->JumpTo(val & ~0x1);
     }
     else
     {
@@ -367,13 +368,13 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
         ((ARMv5*)cpu)->DataAbort(); \
         return; } \
     if (r+1 == 15) { \
-        if (cpu->Num==0) { \
-            if (cpu->TimingPtr > 0) cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600; \
-            else cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual; } \
-        cpu->JumpTo(((((ARMv5*)cpu)->CP15Control & (1<<15)) ? (val & ~0x1) : val), cpu->CurInstr & (1<<22)); } /* restores cpsr presumably due to shared dna with ldm */ \
+        if (cpu->TimingPtr > 0) { cpu->R[15] = val; cpu->TimingBlocks[cpu->TimingPtr++] = 0x6680 | (((cpu->CurInstr >> 22) & 1) << 5); } \
+        else { \
+            cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual; \
+            cpu->JumpTo(((((ARMv5*)cpu)->CP15Control & (1<<15)) ? (val & ~0x1) : val), cpu->CurInstr & (1<<22)); } } /* restores cpsr presumably due to shared dna with ldm */ \
     else { \
         cpu->R[r+1] = val; \
-        if (cpu->Num == 0) ((ARMv5*)cpu)->RaiseInterlock(r+1); } \
+        ((ARMv5*)cpu)->RaiseInterlock(r+1); } \
     if (cpu->CurInstr & (1<<21)) cpu->R[(cpu->CurInstr>>16) & 0xF] = offset;
 
 #define A_LDRD_POST \
@@ -390,13 +391,13 @@ A_IMPLEMENT_WB_LDRSTR(LDRB)
         ((ARMv5*)cpu)->DataAbort(); \
         return; } \
     if (r+1 == 15) { \
-        if (cpu->Num==0) { \
-            if (cpu->TimingPtr > 0) cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600; \
-            else cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual; } \
-        cpu->JumpTo(((((ARMv5*)cpu)->CP15Control & (1<<15)) ? (val & ~0x1) : val), cpu->CurInstr & (1<<22)); } /* restores cpsr presumably due to shared dna with ldm */ \
+        if (cpu->TimingPtr > 0) { cpu->R[15] = val; cpu->TimingBlocks[cpu->TimingPtr++] = 0x6680 | (((cpu->CurInstr >> 22) & 1) << 5); } \
+        else { \
+            cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual; \
+            cpu->JumpTo(((((ARMv5*)cpu)->CP15Control & (1<<15)) ? (val & ~0x1) : val), cpu->CurInstr & (1<<22)); } } /* restores cpsr presumably due to shared dna with ldm */ \
     else { \
         cpu->R[r+1] = val; \
-        if (cpu->Num == 0) ((ARMv5*)cpu)->RaiseInterlock(r+1); } \
+        ((ARMv5*)cpu)->RaiseInterlock(r+1); } \
     cpu->R[(cpu->CurInstr>>16) & 0xF] += offset;
 
 #define A_STRD \
@@ -730,14 +731,16 @@ void A_LDM(ARM* cpu)
         {
             if (cpu->TimingPtr > 0)
             {
-                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+                cpu->R[15] = pc;
+                cpu->TimingBlocks[cpu->TimingPtr++] = 0x6680 | (((cpu->CurInstr >> 22) & 1) << 5);
             }
             else
             {
                 cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+                cpu->JumpTo(pc, cpu->CurInstr & (1<<22));
             }
         }
-        cpu->JumpTo(pc, cpu->CurInstr & (1<<22));
+        else cpu->JumpTo(pc, cpu->CurInstr & (1<<22));
     }
     else if (cpu->Num == 0)
     {
@@ -1108,20 +1111,21 @@ void T_POP(ARM* cpu)
 
         if (!dabort) [[likely]]
         {
-            if (cpu->Num==1 || (((ARMv5*)cpu)->CP15Control & (1<<15))) pc |= 0x1;
             if (cpu->Num == 0) // force an interlock
             {
                 if (cpu->TimingPtr > 0)
                 {
-                    cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+                    cpu->R[15] = pc;
+                    cpu->TimingBlocks[cpu->TimingPtr++] = 0x66C0;
                 }
                 else
                 {
+                    if (((ARMv5*)cpu)->CP15Control & (1<<15)) pc |= 0x1;
                     cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+                    cpu->JumpTo(pc);
                 }
             }
-
-            cpu->JumpTo(pc);
+            else cpu->JumpTo(pc | 0x1);
             base += 4;
         }
         else [[unlikely]]
@@ -1136,7 +1140,17 @@ void T_POP(ARM* cpu)
         {
             //if (cpu->Num == 0 && cpu->DataRegion == Mem9_ITCM) cpu->TimingBlocks[cpu->TimingPtr] += 1;
             cpu->AddCycles_CDI();
-            if (cpu->Num == 0);// cpu->TimingBlocks[cpu->TimingPtr] = ((ARMv5*)cpu)->TimestampActual; // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+            if (cpu->Num == 0) // on arm9 single reg ldm/stm cannot overlap memory and fetch stages
+            {
+                if (cpu->TimingPtr > 0)
+                {
+                    cpu->TimingBlocks[cpu->TimingPtr++] = 0x6600;
+                }
+                else
+                {
+                    cpu->NDS.ARM9Timestamp = ((ARMv5*)cpu)->TimestampActual;
+                }
+            }
             else; // CHECKME: ARM7 timing behavior?
         }
         else

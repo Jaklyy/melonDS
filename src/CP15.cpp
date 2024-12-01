@@ -2414,7 +2414,6 @@ bool ARMv5::DataRead8(u32 addr, u32* val, u8 reg)
     {
         TimingBlocks[TimingPtr++] = 0x8200 | reg;
         DeferAddr[reg&0xF] = addr;
-        if ((reg&0x7F) >= 15) *val = BusRead8(addr);
     }
     else
     {
@@ -2423,7 +2422,6 @@ bool ARMv5::DataRead8(u32 addr, u32* val, u8 reg)
             TimingBlocks[TimingPtr++] = 0x4000 | reg;
             TimingBlocks[TimingPtr++] = 0x4000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
             DeferAddr[reg&0xF] = addr;
-            if ((reg&0x7F) >= 15) *val = BusRead8(addr);
         }
         else
         {
@@ -2550,7 +2548,6 @@ bool ARMv5::DataRead16(u32 addr, u32* val, u8 reg)
     {
         TimingBlocks[TimingPtr++] = 0x8100 | reg;
         DeferAddr[reg&0xF] = addr;
-        if ((reg&0x7F) >= 15) *val = BusRead16(addr);
     }
     else
     {
@@ -2559,7 +2556,6 @@ bool ARMv5::DataRead16(u32 addr, u32* val, u8 reg)
             TimingBlocks[TimingPtr++] = 0x4000 | reg;
             TimingBlocks[TimingPtr++] = 0x8000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
             DeferAddr[reg&0xF] = addr;
-            if ((reg&0x7F) >= 15) *val = BusRead16(addr);
         }
         else
         {
@@ -2684,7 +2680,6 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
     {
         TimingBlocks[TimingPtr++] = 0x8000 | reg;
         DeferAddr[reg&0xF] = addr;
-        if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
     }
     else
     {
@@ -2693,7 +2688,6 @@ bool ARMv5::DataRead32(u32 addr, u32* val, u8 reg)
             TimingBlocks[TimingPtr++] = 0x4000 | reg;
             TimingBlocks[TimingPtr++] = 0x0000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
             DeferAddr[reg&0xF] = addr;
-            if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
         }
         else
         {
@@ -2787,7 +2781,6 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
         {
             TimingBlocks[TimingPtr++] = 0x8800 | reg;
             DeferAddr[reg&0xF] = addr;
-            if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
         }
         else
         {
@@ -2796,7 +2789,6 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
                 TimingBlocks[TimingPtr++] = 0x4800 | reg;
                 TimingBlocks[TimingPtr++] = 0x0000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
                 DeferAddr[reg&0xF] = addr;
-                if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
             }
             else
             {
@@ -2832,7 +2824,6 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
         {
             TimingBlocks[TimingPtr++] = 0x8000 | reg;
             DeferAddr[reg&0xF] = addr;
-            if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
         }
         else
         {
@@ -2841,7 +2832,6 @@ bool ARMv5::DataRead32S(u32 addr, u32* val, u8 reg)
                 TimingBlocks[TimingPtr++] = 0x4000 | reg;
                 TimingBlocks[TimingPtr++] = 0x0000 | __builtin_ctz(NDS.ARM9Regions[addr>>14]);
                 DeferAddr[reg&0xF] = addr;
-                if ((reg&0x7F) >= 15) *val = BusRead32(addr & ~3);
             }
             else
             {

@@ -199,7 +199,7 @@ public:
                             * 0xA0 == Write Buffer Submit; 0xA1 == Drain WB; 0xA2 == WB Wait Read; 0xA3 == WB Wait Write; 0xA4 == WB TS Update;
                             * 0x60 == Execute Stage; 0x61 == Memory Stage; 0x62 == Memory Stage (post load/store);
                             * 0x63 == Raise Interlock (0x00F0 == Reg; 0x000F == delay); 0x64 == Trigger Interlock Execute; 0x65 == Trigger Interlock Memory (0x000F == Reg);
-                            * 0x66 == Forced Interlock (lsb is extra delay);
+                            * 0x66 == Forced Interlock (lsb: 0x0080 == jump; 0x0040 == thumb; 0x0020 == restore cpsr; 0x001F == extra delay);
                             SCRAPPED == Reg Deference; 0x08 == Swap; 0x04 == Write; 0x01 == 16 bit; 0x02 == 8 bit; low bits are reg used 
 
 
@@ -218,7 +218,7 @@ public:
     u16 ClearPtr;
     u8 CurCnt;
 
-    u32 DeferAddr[17];
+    u32 DeferAddr[19];
     u32 DeferStore[16][2];
 
 #ifdef JIT_ENABLED

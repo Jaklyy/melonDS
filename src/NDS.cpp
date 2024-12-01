@@ -1035,7 +1035,7 @@ void NDS::RunMainRAM9()
                 {
                     ARM9Write32(ARM9.DeferStore[reg][0], ARM9.DeferStore[reg][1]);
                 }
-                else if (reg < 15)
+                else
                 {
                     u32 addr = ARM9.DeferAddr[reg];
                     ARM9.R[reg] = ARM9Read32(addr & ~3);
@@ -1066,7 +1066,7 @@ void NDS::RunMainRAM9()
                 {
                     ARM9Write16(ARM9.DeferStore[reg][0], ARM9.DeferStore[reg][1]);
                 }
-                else if (reg < 15)
+                else
                 {
                     ARM9.R[reg] = ARM9Read16(ARM9.DeferAddr[reg]);
                     if (block & 0x80) ARM9.R[reg] = (s32)(s16)ARM9.R[reg];
@@ -1095,7 +1095,7 @@ void NDS::RunMainRAM9()
                 {
                     ARM9Write8(ARM9.DeferStore[reg][0], ARM9.DeferStore[reg][1]);
                 }
-                else if (reg < 15)
+                else
                 {
                     ARM9.R[reg] = ARM9Read8(ARM9.DeferAddr[reg]);
                     if (block & 0x80) ARM9.R[reg] = (s32)(s8)ARM9.R[reg];
@@ -1173,7 +1173,7 @@ void NDS::RunMainRAM9()
                         ARM9Write32(ARM9.DeferStore[reg][0], ARM9.DeferStore[reg][1]);
                     }
                 }
-                else if (reg < 15)
+                else
                 {
                     if (ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0x8000)
                     {
@@ -1637,6 +1637,20 @@ void NDS::RunMainRAM9()
         case 0x66:
         {
             ARM9Timestamp = ARM9.TimestampActual + (block & 0xF);
+            if (block & 0x0080)
+            {
+                u32 addr = ARM9.R[15];
+                if (block & 0x0040)
+                {
+                    if (ARM9.CP15Control & (1<<15)) addr |= 1;
+                }
+                else
+                {
+                    if (ARM9.CP15Control & (1<<15)) addr &= ~1;
+                }
+                    
+                ARM9.JumpTo(addr, block & 0x0020);
+            }
             ARM9.ClearPtr++;
             break;
         }
