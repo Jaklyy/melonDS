@@ -366,12 +366,12 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
         // doesn't matter if we put garbage in the MSbs there
         if (addr & 0x2)
         {
-            NextInstr[0] = CodeRead32(addr-2, true) >> 16;
-            NextInstr[1] = CodeRead32(addr+2, false);
+            NextInstr[0] = CodeRead32(addr-2, 1) >> 16;
+            NextInstr[1] = CodeRead32(addr+2, 2);
         }
         else
         {
-            NextInstr[0] = CodeRead32(addr, true);
+            NextInstr[0] = CodeRead32(addr, 3);
             NextInstr[1] = NextInstr[0] >> 16;
         }
 
@@ -381,8 +381,8 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
     {
         addr &= ~0x3;
         R[15] = addr+4;
-        NextInstr[0] = CodeRead32(addr, true);
-        NextInstr[1] = CodeRead32(addr+4, false);
+        NextInstr[0] = CodeRead32(addr, 4);
+        NextInstr[1] = CodeRead32(addr+4, 5);
 
         CPSR &= ~0x20;
     }
@@ -1196,7 +1196,7 @@ void ARMv5::CodeFetch()
         NextInstr[1] >>= 16;
         if (TimingPtr > 0)
         {
-            TimingBlocks[TimingPtr++] = 0x4200;
+            TimingBlocks[TimingPtr++] = 0x42FF;
             TimingBlocks[TimingPtr++] = 0x0000 | 31;
         }
         else
@@ -1208,7 +1208,7 @@ void ARMv5::CodeFetch()
     }
     else
     {
-        NextInstr[1] = CodeRead32(PC, false);
+        NextInstr[1] = CodeRead32(PC, 0);
     }
 }
 

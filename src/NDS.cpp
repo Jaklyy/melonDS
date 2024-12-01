@@ -1114,6 +1114,17 @@ void NDS::RunMainRAM9()
             MainRAMTimestamp = (ARM9Timestamp >> ARM9ClockShift) + 9;
             ARM9Timestamp += (9 << ARM9ClockShift) - 1;
 
+            switch (block & 0xFF)
+            {
+                case 0: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[16]); break;
+                case 1: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[17]) >> 16; break;
+                case 2: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[18]); break;
+                case 3: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[19]); ARM9.NextInstr[1] = ARM9.NextInstr[0] >> 16; break;
+                case 4: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[20]); break;
+                case 5: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[21]); break;
+                case 0xFF: break;
+            }
+
             ARM9.ClearPtr++;
             ARM9.DataRegion = Mem9_Null;
             break;
@@ -1218,6 +1229,17 @@ void NDS::RunMainRAM9()
             }
 
             if (ARM9Timestamp < ARM9.TimestampActual) ARM9Timestamp = ARM9.TimestampActual;
+
+            switch (block & 0xFF)
+            {
+                case 0: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[16]); break;
+                case 1: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[17]) >> 16; break;
+                case 2: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[18]); break;
+                case 3: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[19]); ARM9.NextInstr[1] = ARM9.NextInstr[0] >> 16; break;
+                case 4: ARM9.NextInstr[0] = ARM9Read32(ARM9.DeferAddr[20]); break;
+                case 5: ARM9.NextInstr[1] = ARM9Read32(ARM9.DeferAddr[21]); break;
+                case 0xFF: break;
+            }
             ARM9.ClearPtr += 2;
             ARM9.DataRegion = Mem9_Null;
             break;

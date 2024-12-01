@@ -418,7 +418,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
             {
                 if (TimingPtr > 0)
                 {
-                    TimingBlocks[TimingPtr++] = 0x4200;
+                    TimingBlocks[TimingPtr++] = 0x42FF;
                     TimingBlocks[TimingPtr++] = 0;
                 }
                 else
@@ -2211,7 +2211,7 @@ u32 ARMv5::CP15Read(const u32 id) const
 // TCM are handled here.
 // TODO: later on, handle PU
 
-u64 ARMv5::CodeRead32(u32 addr, bool branch)
+u64 ARMv5::CodeRead32(const u32 addr, const u8 branch)
 {
     // prefetch abort
     // the actual exception is not raised until the aborted instruction is executed
@@ -2219,7 +2219,7 @@ u64 ARMv5::CodeRead32(u32 addr, bool branch)
     {
         if (TimingPtr > 0)
         {
-            TimingBlocks[TimingPtr++] = 0x4200;
+            TimingBlocks[TimingPtr++] = 0x42FF;
             TimingBlocks[TimingPtr++] = 0x0000 | 31;
         }
         else
@@ -2235,7 +2235,7 @@ u64 ARMv5::CodeRead32(u32 addr, bool branch)
     {
         if (TimingPtr > 0)
         {
-            TimingBlocks[TimingPtr++] = 0x4200;
+            TimingBlocks[TimingPtr++] = 0x42FF;
             TimingBlocks[TimingPtr++] = 0x0000 | 0;
         }
         else
@@ -2279,16 +2279,21 @@ u64 ARMv5::CodeRead32(u32 addr, bool branch)
     else
         WriteBufferCheck<3>();
 
+    u32 val;
     if ((addr >> 24) == 0x02)
     {
-        TimingBlocks[TimingPtr++] = 0x8300;
+        TimingBlocks[TimingPtr++] = 0x8300 | branch;
+        DeferAddr[16+branch] = addr;
+        val = 0;
     }
     else
     {
         if (TimingPtr > 0)
         {
-            TimingBlocks[TimingPtr++] = 0x4200;
+            TimingBlocks[TimingPtr++] = 0x4200 | branch;
             TimingBlocks[TimingPtr++] = __builtin_ctz(NDS.ARM9Regions[addr>>14]);
+            DeferAddr[16+branch] = addr;
+            val = 0;
         }
         else
         {
@@ -2301,6 +2306,7 @@ u64 ARMv5::CodeRead32(u32 addr, bool branch)
             NDS.ARM9Timestamp += MemTimings[addr>>14][1];
 
             DataRegion = Mem9_Null;
+            val = BusRead32(addr);
         }
     }
 
@@ -2308,7 +2314,8 @@ u64 ARMv5::CodeRead32(u32 addr, bool branch)
     {
         TimingBlocks[TimingPtr++] = 0xA400;
     }
-    return BusRead32(addr);
+
+    return val;
 }
 
 

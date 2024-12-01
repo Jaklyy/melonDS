@@ -218,7 +218,7 @@ public:
     u16 ClearPtr;
     u8 CurCnt;
 
-    u32 DeferAddr[19];
+    u32 DeferAddr[22];
     u32 DeferStore[16][2];
 
 #ifdef JIT_ENABLED
@@ -288,7 +288,7 @@ public:
     void Execute();
 
     // all code accesses are forced nonseq 32bit
-    u64 CodeRead32(const u32 addr, const bool branch);
+    u64 CodeRead32(const u32 addr, const u8 branch);
 
     bool DataRead8(u32 addr, u32* val, u8 reg) override;
     bool DataRead16(u32 addr, u32* val, u8 reg) override;
