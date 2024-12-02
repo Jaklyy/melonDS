@@ -367,7 +367,7 @@ u32 ARMv5::RandomLineIndex()
     return (RNGSeed >> 17) & 0x3;
 }
 
-u32 ARMv5::ICacheLookup(const u32 addr)
+u32 ARMv5::ICacheLookup(const u32 addr, const u8 branch)
 {
     const u32 tag = (addr & ~(ICACHE_LINELENGTH - 1));
     const u32 id = ((addr >> ICACHE_LINELENGTH_LOG2) & (ICACHE_LINESPERSET-1)) << ICACHE_SETS_LOG2;
@@ -412,6 +412,7 @@ u32 ARMv5::ICacheLookup(const u32 addr)
         if ((ICacheTags[id+set] & ~(CACHE_FLAG_DIRTY_MASK | CACHE_FLAG_SET_MASK)) == (tag | CACHE_FLAG_VALID))
 #endif
         {
+            if (branch >= 6) return 0;
             u32 *cacheLine = (u32 *)&ICache[(id+set) << ICACHE_LINELENGTH_LOG2];
 
             if (ICacheFillPtr >= 7)
@@ -420,6 +421,9 @@ u32 ARMv5::ICacheLookup(const u32 addr)
                 {
                     TimingBlocks[TimingPtr++] = 0x42FF;
                     TimingBlocks[TimingPtr++] = 0;
+
+                    TimingBlocks[TimingPtr++] = 0xC500 | branch;
+                    DeferCache[16+branch] = ((id+set) << ICACHE_LINELENGTH_LOG2) | (addr & (ICACHE_LINELENGTH-1));
                 }
                 else
                 {
@@ -435,6 +439,9 @@ u32 ARMv5::ICacheLookup(const u32 addr)
                 {
                     TimingBlocks[TimingPtr++] = 0xC000 | ICacheFillPtr;
                     ICacheFillPtr++;
+
+                    TimingBlocks[TimingPtr++] = 0xC500 | branch;
+                    DeferCache[16+branch] = ((id+set) << ICACHE_LINELENGTH_LOG2) | (addr & (ICACHE_LINELENGTH-1));
                 }
                 else
                 {
@@ -542,11 +549,6 @@ u32 ARMv5::ICacheLookup(const u32 addr)
 
     u32* ptr = (u32 *)&ICache[line << ICACHE_LINELENGTH_LOG2];
 
-    {
-        for (int i = 0; i < ICACHE_LINELENGTH; i+=sizeof(u32))
-            ptr[i >> 2] = NDS.ARM9Read32(tag+i);
-    }
-
     ICacheTags[line] = tag | (line & (ICACHE_SETS-1)) | CACHE_FLAG_VALID;
     
     if ((addr >> 24) == 0x02)
@@ -560,6 +562,11 @@ u32 ARMv5::ICacheLookup(const u32 addr)
             TimingBlocks[TimingPtr++] = 0xC300 | (((addr & (ICACHE_LINELENGTH-1)) / 4) + 1);
             ICacheFillPtr = (addr & (ICACHE_LINELENGTH-1)) / 4;
         }
+        CacheIndex[CachePtr] = line << ICACHE_LINELENGTH_LOG2;
+        CacheAddr[CachePtr++] = tag;
+        if (branch >= 6) return 0;
+        TimingBlocks[TimingPtr++] = 0xC500 | branch;
+        DeferCache[16+branch] = (line << ICACHE_LINELENGTH_LOG2) | (addr & (ICACHE_LINELENGTH-1));
     }
     else
     {
@@ -577,9 +584,17 @@ u32 ARMv5::ICacheLookup(const u32 addr)
             }
 
             TimingBlocks[TimingPtr++] = __builtin_ctz(NDS.ARM9Regions[addr>>14]);
+            
+            CacheIndex[CachePtr] = line << ICACHE_LINELENGTH_LOG2;
+            CacheAddr[CachePtr++] = tag;
+            if (branch >= 6) return 0;
+            TimingBlocks[TimingPtr++] = 0xC500 | branch;
+            DeferCache[16+branch] = (line << ICACHE_LINELENGTH_LOG2) | (addr & (ICACHE_LINELENGTH-1));
         }
         else
         {
+            for (int i = 0; i < ICACHE_LINELENGTH; i+=sizeof(u32))
+               ptr[i >> 2] = NDS.ARM9Read32(tag+i);
             // timing logic
             NDS.ARM9Timestamp = (NDS.ARM9Timestamp + ((1<<NDS.ARM9ClockShift)-1)) & ~((1<<NDS.ARM9ClockShift)-1);
 
@@ -616,7 +631,6 @@ u32 ARMv5::ICacheLookup(const u32 addr)
             DataRegion = Mem9_Null;
         }
     }
-
     return ptr[(addr & (ICACHE_LINELENGTH-1)) / 4];
 }
 
@@ -1391,7 +1405,8 @@ inline bool ARMv5::WriteBufferHandle()
         if (NDS.ARM9Regions[storeaddr[WBWritePointer]>>14] == Mem9_MainRAM) // main ram handling
         {
             if (!force && (WBTimestamp > TimingBlocks[TimingPtr])) return true;
-            if ( force && (WBTimestamp > TimingBlocks[TimingPtr]));
+            if ( force && (WBTimestamp > TimingBlocks[TimingPtr]))
+            ;
                 //TimingBlocks[TimingPtr] = WBTimestamp & 0xFF;
 
             WBTimestamp = (s8)TimingBlocks[TimingPtr];//std::max(MainRAMTimestamp, WBTimestamp);
@@ -1876,7 +1891,7 @@ void ARMv5::CP15Write(u32 id, u32 val)
         // we force a fill by looking up the value from cache
         // if it wasn't cached yet, it will be loaded into cache
         // low bits are set to 0x1C to trick cache streaming
-        ICacheLookup((val & ~0x03) | 0x1C);
+        ICacheLookup((val & ~0x03) | 0x1C, 0xFF);
         return;
 
     /*case 0x7E0:
@@ -2255,7 +2270,7 @@ u64 ARMv5::CodeRead32(const u32 addr, const u8 branch)
         {
             if (IsAddressICachable(addr))
             {
-                return ICacheLookup(addr);
+                return ICacheLookup(addr, branch);
             }
     #endif 
         }

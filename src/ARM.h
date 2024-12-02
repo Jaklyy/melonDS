@@ -194,7 +194,8 @@ public:
                             * followed by a block containing: 0x80 == 16 bit; 0x40 == 8 bit; 0x001F == Region;
                             * 0xC0 == ICache Stream Fetch; 0xC1 == Instruction NS Flush; 0xC2 == Data Access Flush;
                             * 0xC3 == ICache Stream Start; lsb used for what point it begins;
-                            * 0xC4 = ICache Stream Start Non-Main RAM; followed by a block containing: 0x001F == region;
+                            * 0xC4 == ICache Stream Start Non-Main RAM; followed by a block containing: 0x001F == region;
+                            * 0xC5 == Deferred ICache Fetch;
                             * 0x20 == DCache variants of above;
                             * 0xA0 == Write Buffer Submit; 0xA1 == Drain WB; 0xA2 == WB Wait Read; 0xA3 == WB Wait Write; 0xA4 == WB TS Update;
                             * 0x60 == Execute Stage; 0x61 == Memory Stage; 0x62 == Memory Stage (post load/store);
@@ -399,7 +400,7 @@ public:
      * cache. The address is internally aligned to an word boundary
      * @return Value of the word at addr
      */
-    u32 ICacheLookup(const u32 addr);
+    u32 ICacheLookup(const u32 addr, const u8 branch);
 
     /**
      * @brief Check if an address is within a instruction cachable 
@@ -717,6 +718,11 @@ public:
     bool DCacheStreamMainRAM;
     u64 ICacheFillTimes[7];
     u64 DCacheFillTimes[7];
+    u32 CacheIndex[4];
+    u32 CacheAddr[4];
+    u8 CachePtr;
+    u8 CacheClearPtr;
+    u32 DeferCache[22];
 
     u8 WBQueuePtr;
     u8 WBQueueRead;

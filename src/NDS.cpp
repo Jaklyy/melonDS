@@ -1348,6 +1348,18 @@ void NDS::RunMainRAM9()
         }
         case 0xC3: // ICache Stream Start
         {
+            for (int i = 0; i < 0x20; i+=4)
+            {
+                u32 val = ARM9Read32(ARM9.CacheAddr[ARM9.CacheClearPtr]|i);
+                memcpy(&ARM9.ICache[ARM9.CacheIndex[ARM9.CacheClearPtr]|i], &val, 4);
+            }
+            ARM9.CacheClearPtr++;
+            if (ARM9.CacheClearPtr >= ARM9.CachePtr)
+            {
+                ARM9.CacheClearPtr = 0;
+                ARM9.CachePtr = 0;
+            }
+
             ARM9.ICacheStreamMainRAM = true;
             Async9Mode = 1;
             CheckAsync9 = 1;
@@ -1360,6 +1372,18 @@ void NDS::RunMainRAM9()
         }
         case 0xC4:
         {
+            for (int i = 0; i < 0x20; i+=4)
+            {
+                u32 val = ARM9Read32(ARM9.CacheAddr[ARM9.CacheClearPtr]|i);
+                memcpy(&ARM9.ICache[ARM9.CacheIndex[ARM9.CacheClearPtr]|i], &val, 4);
+            }
+            ARM9.CacheClearPtr++;
+            if (ARM9.CacheClearPtr >= ARM9.CachePtr)
+            {
+                ARM9.CacheClearPtr = 0;
+                ARM9.CachePtr = 0;
+            }
+
             u8 rgn = ARM9.TimingBlocks[ARM9.ClearPtr+1] & 0x1F;
             // timing logic
             ARM9Timestamp = (ARM9Timestamp + ((1<<ARM9ClockShift)-1)) & ~((1<<ARM9ClockShift)-1);
@@ -1386,6 +1410,23 @@ void NDS::RunMainRAM9()
             ARM9.ICacheStreamMainRAM = false;
             ARM9.DataRegion = Mem9_Null;
             ARM9.ClearPtr += 2;
+            break;
+        }
+        case 0xC5:
+        {
+            //printf("READ: %i %X %i\n", ARM9.iter, ARM9.DeferCache[16+(block&0xFF)], block & 0xFF);
+            switch (block & 0xFF)
+            {
+                case 0: if (ARM9.DeferCache[16] < 0xFFFFFFFF) { ARM9.NextInstr[1] = 0; memcpy(&ARM9.NextInstr[1], &ARM9.ICache[ARM9.DeferCache[16]], 4); } break;
+                case 1: ARM9.NextInstr[0] = 0; memcpy(&ARM9.NextInstr[0], &ARM9.ICache[ARM9.DeferCache[17]], 4); ARM9.NextInstr[0] >>= 16; break;
+                case 2: ARM9.NextInstr[1] = 0; memcpy(&ARM9.NextInstr[1], &ARM9.ICache[ARM9.DeferCache[18]], 4); break;
+                case 3: ARM9.NextInstr[0] = 0; memcpy(&ARM9.NextInstr[0], &ARM9.ICache[ARM9.DeferCache[19]], 4); ARM9.NextInstr[1] = ARM9.NextInstr[0] >> 16; break;
+                case 4: ARM9.NextInstr[0] = 0; memcpy(&ARM9.NextInstr[0], &ARM9.ICache[ARM9.DeferCache[20]], 4); break;
+                case 5: ARM9.NextInstr[1] = 0; memcpy(&ARM9.NextInstr[1], &ARM9.ICache[ARM9.DeferCache[21]], 4); break;
+                default: break;
+            }
+            //printf("0: %08llX 1: %08llX\n", ARM9.NextInstr[0], ARM9.NextInstr[1]);
+            ARM9.ClearPtr++;
             break;
         }
         
@@ -1681,7 +1722,7 @@ void NDS::RunMainRAM9()
 
         default: // error handler
         {
-            printf("CRYING2 %04X, %08X, %i, %i\n", block, ARM9.CurInstr, ARM9.TimingPtr, ARM9.ClearPtr);
+            printf("CRYING2 %04X, %08llX, %i, %i\n", block, ARM9.CurInstr, ARM9.TimingPtr, ARM9.ClearPtr);
             //ARM9.ClearPtr++;
             break;
         }
@@ -1694,7 +1735,11 @@ void NDS::RunMainRAM9()
     }
     else block = ARM9.TimingBlocks[ARM9.ClearPtr];
     }
-    while (((block >> 12) == 0x4) || ((block >> 8) == 0xA4) || ((((block >> 12) == 0xC) && !ARM9.ICacheStreamMainRAM) || ((block >> 8) == 0xC4)) ||  ((((block >> 12) == 0x2) && !ARM9.DCacheStreamMainRAM) || ((block >> 8) == 0x24)) || ((block >> 12) == 0x6));
+    while (((block >> 12) == 0x4)
+        || ((block >> 8) == 0xA4)
+        || ((((block >> 12) == 0xC) && !ARM9.ICacheStreamMainRAM) || ((block >> 8) == 0xC4) || ((block >> 8) == 0xC5))
+        || ((((block >> 12) == 0x2) && !ARM9.DCacheStreamMainRAM) || ((block >> 8) == 0x24))
+        || ((block >> 12) == 0x6));
     //RunCycles(&ARM9, &ARM9Timestamp);
 }
 
@@ -1782,7 +1827,7 @@ bool NDS::RunARM9WriteBuffer()
                 //ARM9Write32(WBAddr, WBCurr);
                 break;
             default: // invalid
-                Platform::Log(Platform::LogLevel::Warn, "WHY ARE WE TRYING TO WRITE AN ADDRESS VIA THE WRITE BUFFER! PANIC!!!\n", (u8)(WBCurr >> 61));
+                Platform::Log(Platform::LogLevel::Warn, "WHY ARE WE TRYING TO WRITE AN ADDRESS VIA THE WRITE BUFFER! PANIC!!! %i\n", (u8)(WBCurr >> 61));
                 break;
         }
 
@@ -1837,6 +1882,14 @@ void NDS::RunMainRAM9Async()
                 MainRAMTimestamp = Async9Timestamp += 9;
                 MainRAMLastAccess = 0;
             }
+
+            /*if (Async9Mode == 1)
+            {
+                //printf("WRITE: %i %X %i\n", ARM9.iter, ARM9.CacheIndex[ARM9.CacheClearPtr]|(Async9Curr*4), ARM9.CacheClearPtr);
+                u32 val = ARM9Read32(ARM9.CacheAddr[ARM9.CacheClearPtr]|(Async9Curr*4));
+                memcpy(&ARM9.ICache[ARM9.CacheIndex[ARM9.CacheClearPtr]|(Async9Curr*4)], &val, 4);
+            }*/
+
             Async9Curr++;
             if (Async9Curr >= Async9Goal)
             {
@@ -1933,6 +1986,12 @@ void NDS::RunMainRAM9Async()
                 if (Async9Curr == 8)
                 {
                     Async9Mode = 3 * WBActive;
+                    /*ARM9.CacheClearPtr++;
+                    if (ARM9.CacheClearPtr >= ARM9.CachePtr)
+                    {
+                        ARM9.CacheClearPtr = 0;
+                        ARM9.CachePtr = 0;
+                    }*/
                 }
                 CheckAsync9 = 0;
             }
@@ -2034,7 +2093,7 @@ void NDS::RunMainRAM9Async()
 
         default:
         {
-            printf("HUH? %i %04X %08X\n", Async9Mode, ARM9.TimingBlocks[ARM9.ClearPtr], ARM9.CurInstr);
+            printf("HUH? %i %04X %08llX\n", Async9Mode, ARM9.TimingBlocks[ARM9.ClearPtr], ARM9.CurInstr);
             //Async9Mode = 0;
             return;
         }

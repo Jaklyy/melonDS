@@ -220,7 +220,9 @@ void ARMv5::Reset()
     DCacheFillPtr = 7;
     ICacheStreamMainRAM = false;
     DCacheStreamMainRAM = false;
-    
+    CachePtr = 0;
+    CacheClearPtr = 0;
+
     WBQueuePtr = 0;
     WBQueueRead = 0;
 
@@ -358,6 +360,7 @@ void ARMv5::JumpTo(u32 addr, bool restorecpsr)
     }
 
     DeferAddr[16] |= (1ULL<<63);
+    DeferCache[16] = 0xFFFFFFFF;
 
     if (addr & 0x1)
     {
