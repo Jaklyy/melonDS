@@ -1073,15 +1073,15 @@ void SoftRenderer::RenderPolygonScanline(const GPU& gpu, RendererPolygon* rp, s3
     s32 gl = interp_start->Interpolate(vlcur->FinalColor[1], vlnext->FinalColor[1]);
     s32 bl = interp_start->Interpolate(vlcur->FinalColor[2], vlnext->FinalColor[2]);
 
-    s32 sl = interp_start->Interpolate(vlcur->TexCoords[0], vlnext->TexCoords[0]);
-    s32 tl = interp_start->Interpolate(vlcur->TexCoords[1], vlnext->TexCoords[1]);
+    s32 sl = interp_start->Interpolate(vlcur->TexCoords[0]>>16, vlnext->TexCoords[0]>>16);
+    s32 tl = interp_start->Interpolate(vlcur->TexCoords[1]>>16, vlnext->TexCoords[1]>>16);
 
     s32 rr = interp_end->Interpolate(vrcur->FinalColor[0], vrnext->FinalColor[0]);
     s32 gr = interp_end->Interpolate(vrcur->FinalColor[1], vrnext->FinalColor[1]);
     s32 br = interp_end->Interpolate(vrcur->FinalColor[2], vrnext->FinalColor[2]);
 
-    s32 sr = interp_end->Interpolate(vrcur->TexCoords[0], vrnext->TexCoords[0]);
-    s32 tr = interp_end->Interpolate(vrcur->TexCoords[1], vrnext->TexCoords[1]);
+    s32 sr = interp_end->Interpolate(vrcur->TexCoords[0]>>16, vrnext->TexCoords[0]>>16);
+    s32 tr = interp_end->Interpolate(vrcur->TexCoords[1]>>16, vrnext->TexCoords[1]>>16);
 
     // in wireframe mode, there are special rules for equal Z (TODO)
 

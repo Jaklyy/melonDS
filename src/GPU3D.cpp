@@ -1383,6 +1383,9 @@ void GPU3D::SubmitVertex() noexcept
         vertextrans->TexCoords[1] = TexCoords[1];
     }
 
+    vertextrans->TexCoords[0] = (vertextrans->TexCoords[0] << 16) + 0xFFFF;
+    vertextrans->TexCoords[1] = (vertextrans->TexCoords[1] << 16) + 0xFFFF;
+
     vertextrans->Clipped = false;
 
     VertexNum++;
